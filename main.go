@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	ct "github.com/google/certificate-transparency-go"
+	ct_tls "github.com/google/certificate-transparency-go/tls"
+	"github.com/google/certificate-transparency-go/x509"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"os"
@@ -12,11 +15,9 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
+	"time"
 
-	ct "github.com/google/certificate-transparency-go"
-	ct_tls "github.com/google/certificate-transparency-go/tls"
-	"github.com/google/certificate-transparency-go/x509"
-	"golang.org/x/net/publicsuffix"
+	//"golang.org/x/net/publicsuffix"
 )
 
 // MatchIPv6 is a regular expression for validating IPv6 addresses
@@ -25,7 +26,12 @@ var MatchIPv6 = regexp.MustCompile(`^((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:
 // MatchIPv4 is a regular expression for validating IPv4 addresses
 var MatchIPv4 = regexp.MustCompile(`^(?:(?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2}))$`)
 
-//TODO: create map Log->Index
+type CertInfo struct {
+	CN string
+	DN string
+	SerialNumber string
+}
+
 var CTLogs = []string{
 	"https://ct.googleapis.com/logs/argon2019/",
 	"https://ct.googleapis.com/logs/argon2020/",
@@ -39,6 +45,10 @@ var CTLogs = []string{
 	"https://ct.googleapis.com/pilot/",
 	"https://ct.googleapis.com/rocketeer/",
 	"https://ct.googleapis.com/skydiver/",
+	"https://oak.ct.letsencrypt.org/2020/",
+	"https://oak.ct.letsencrypt.org/2021/",
+	"https://oak.ct.letsencrypt.org/2022/",
+	"https://oak.ct.letsencrypt.org/2023/",
 	//"https://ct.cloudflare.com/logs/nimbus2019/",
 	//"https://ct.cloudflare.com/logs/nimbus2020/",
 	//"https://ct.cloudflare.com/logs/nimbus2021/",
@@ -84,26 +94,29 @@ func usage() {
 	flag.PrintDefaults()
 }
 
-func scrubX509Value(bit string) string {
-	bit = strings.Replace(bit, "\x00", "[0x00]", -1)
-	bit = strings.Replace(bit, " ", "_", -1)
-	return bit
+func downloadHeads() {
+	for l := range CTLogs {
+		head, err := DownloadSTH(CTLogs[l])
+		if err != nil {
+			log.Fatal("Failed downloading log")
+		}
+		db.Exec("INSERT INTO CTLog VALUES (?, ?)", CTLogs[l], head.TreeSize)
+	}
 }
 
-func logNameToPath(name string) string {
-	bits := strings.SplitN(name, "//", 2)
-	return strings.Replace(bits[1], "/", "_", -1)
-}
-
-func outputWriter(o <-chan string) {
+//TODO: Probably not needed
+func outputWriter(o <-chan CertInfo, db *sql.DB) {
 	for name := range o {
-		fmt.Print(name)
+		_, err := db.Exec("INSERT INTO Downloaded VALUES (?, ?, ?)", name.CN, name.DN, name.SerialNumber)
+		if err != nil {
+			log.Printf("Failed saving cert with CN: %s\nDN: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.SerialNumber, err)
+		}
 		atomic.AddInt64(&outputCount, 1)
 	}
 	Wo.Done()
 }
 
-func inputParser(c <-chan CTEntry, o chan<- string, db *sql.DB) {
+func inputParser(c <-chan CTEntry, o chan<- CertInfo, db *sql.DB) {
 	for entry := range c {
 		var leaf ct.MerkleTreeLeaf
 
@@ -143,52 +156,10 @@ func inputParser(c <-chan CTEntry, o chan<- string, db *sql.DB) {
 		// Valid input
 		atomic.AddInt64(&inputCount, 1)
 
-		var names = make(map[string]struct{})
-
-		if suffix, err := publicsuffix.EffectiveTLDPlusOne(cert.Subject.CommonName); err == nil {
-			// Make sure this looks like an actual hostname or IP address
-			if !(MatchIPv4.Match([]byte(cert.Subject.CommonName)) ||
-				MatchIPv6.Match([]byte(cert.Subject.CommonName))) &&
-				(strings.Contains(cert.Subject.CommonName, " ") ||
-					strings.Contains(cert.Subject.CommonName, ":")) {
-				continue
-			}
-			//names[strings.ToLower(cert.Subject.CommonName)] = struct{}{}
-			names[suffix] = struct{}{}
-		}
-
-		//get DNS names
-		for _, alt := range cert.DNSNames {
-			if _, err := publicsuffix.EffectiveTLDPlusOne(alt); err == nil {
-				// Make sure this looks like an actual hostname or IP address
-				if !(MatchIPv4.Match([]byte(cert.Subject.CommonName)) ||
-					MatchIPv6.Match([]byte(cert.Subject.CommonName))) &&
-					(strings.Contains(alt, " ") ||
-						strings.Contains(alt, ":")) {
-					continue
-				}
-				names[strings.ToLower(alt)] = struct{}{}
-			}
-		}
-
-		//TODO: Postupy
-		// a) stejne stahuju vsechny, nahrat do tmp tabulky, pak je vyfiltrovat, pak je poslat
-		// b) kdyz ho stahnu, tak zkontroluju jestli ho monitoruju a nahraju ho do databaze, pak projedu databazi a poslu maily
-		// za a) je lepsi
-
-		isMonitored, err := sqldb.IsDomainMonitored(names, db)
-		if err != nil {
-			log.Printf("[-] Error while fetching domain being monitored -> %s\n", err)
-			continue
-		}
-
-
-		if isMonitored {
-			//thumbprint := sha1.Sum(cert.Raw)
-			//sha1hash := hex.EncodeToString(thumbprint[:])
-
-			//cert.Subject.String()
-			o <- fmt.Sprintf("%s, subject: %s\n", names, cert.Subject.String())
+		o <- CertInfo{
+			CN:           cert.Subject.CommonName,
+			DN:           cert.Subject.String(),
+			SerialNumber: cert.SerialNumber.String(),
 		}
 	}
 
@@ -196,6 +167,7 @@ func inputParser(c <-chan CTEntry, o chan<- string, db *sql.DB) {
 }
 
 func main() {
+	startTime := time.Now()
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	os.Setenv("LC_ALL", "C")
 
@@ -205,7 +177,6 @@ func main() {
 	flag.Parse()
 	db = sqldb.ConnectToDatabase()
 	defer sqldb.CloseConnection(db)
-
 
 	logIndexes := make(map[string]int64)
 	var err error
@@ -223,11 +194,12 @@ func main() {
 		}
 	}
 
+
 	// Input
 	c_inp := make(chan CTEntry)
 
 	// Output
-	c_out := make(chan string)
+	c_out := make(chan CertInfo)
 
 	// Launch one input parser per core
 	for i := 0; i < runtime.NumCPU(); i++ {
@@ -236,17 +208,15 @@ func main() {
 	Wi.Add(runtime.NumCPU())
 
 	// Launch a single output writer
-	go outputWriter(c_out)
+	go outputWriter(c_out, db)
 	Wo.Add(1)
-
-	// Make temp table for downloaded entries
-	//sqldb.MakeTempTable(db)
 
 	// Start downloading for each log
  	for url, headIndex := range logIndexes {
 		go DownloadLog(url, c_inp, headIndex, db)
 		Wd.Add(1)
 	}
+
 
 	// Wait for downloaders
 	Wd.Wait()
@@ -262,4 +232,16 @@ func main() {
 
 	// Wait for the output goroutine
 	Wo.Wait()
+
+
+ 	// Finished downloading, start working with the data
+ 	downloadEndTime := time.Now()
+ 	log.Println("Download duration = ", downloadEndTime.Sub(startTime))
+ 	if inputCount != outputCount {
+ 		log.Printf("Input doesn't match output\n")
+	} else {
+		log.Printf("Input matches output\n")
+	}
+
+	sqldb.ParseDownloadedCertificates(db)
 }

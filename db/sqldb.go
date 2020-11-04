@@ -21,13 +21,6 @@ func CloseConnection(db *sql.DB) {
 	db.Close()
 }
 
-func MakeTempTable(db *sql.DB) {
-	//var cert x509.Certificate
-	db.Exec("CREATE TABLE Downloaded (" +
-		"" +
-		") ;")
-}
-
 // Returns a map of log URLs and their head indexes
 func GetLogURLsAndIndexes(db *sql.DB) (map[string]int64, error) {
 	resultMap := make(map[string]int64)
@@ -86,5 +79,34 @@ func IsDomainMonitored(names map[string]struct{}, db *sql.DB) (bool, error) {
 		return false, err
 	} else {
 		return true, err
+	}
+}
+
+func ParseDownloadedCertificates(db *sql.DB) {
+	//TODO: find CN with monitored domains
+	//		put them into one string we can send with an email
+
+	query := `
+		SELECT Monitor.email, CN, DN, serialnumber 
+		FROM Monitor, Downloaded 
+		WHERE domain IN (
+			SELECT DISTINCT domain FROM Monitor
+		)`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		log.Printf("[-] Error while parsing downloaded certificates -> %s\n", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			email string
+			CN string
+			DN string
+			serialnumber string
+		)
+		rows.Scan(&email, &CN, &DN, &serialnumber)
+		println(email, " ", CN, " ", DN, " ", serialnumber)
 	}
 }
