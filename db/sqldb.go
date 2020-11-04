@@ -86,18 +86,21 @@ func ParseDownloadedCertificates(db *sql.DB) {
 	//TODO: find CN with monitored domains
 	//		put them into one string we can send with an email
 
+	println("WOULD BE PARSING")
+
 	query := `
-		SELECT Monitor.email, CN, DN, serialnumber 
-		FROM Monitor, Downloaded 
-		WHERE domain IN (
-			SELECT DISTINCT domain FROM Monitor
-		)`
+		SELECT email, CN, DN, serialnumber
+		FROM Downloaded
+		INNER JOIN Monitor M ON INSTR(CN, M.domain) > 0;`
 
 	rows, err := db.Query(query)
 	if err != nil {
 		log.Printf("[-] Error while parsing downloaded certificates -> %s\n", err)
 	}
 	defer rows.Close()
+
+	// TODO: create map email->[]cert
+	// insert monitored
 
 	for rows.Next() {
 		var (

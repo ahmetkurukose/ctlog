@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	//"golang.org/x/net/publicsuffix"
+	"golang.org/x/net/publicsuffix"
 )
 
 // MatchIPv6 is a regular expression for validating IPv6 addresses
@@ -100,14 +100,14 @@ func downloadHeads() {
 		if err != nil {
 			log.Fatal("Failed downloading log")
 		}
-		db.Exec("INSERT INTO CTLog VALUES (?, ?)", CTLogs[l], head.TreeSize)
+		db.Exec("UPDATE CTLog SET lastIndex = ? WHERE url = ?", head.TreeSize, CTLogs[l])
 	}
 }
 
 //TODO: Probably not needed
 func outputWriter(o <-chan CertInfo, db *sql.DB) {
 	for name := range o {
-		_, err := db.Exec("INSERT INTO Downloaded VALUES (?, ?, ?)", name.CN, name.DN, name.SerialNumber)
+		_, err := db.Exec("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?)", name.CN, name.DN, name.SerialNumber)
 		if err != nil {
 			log.Printf("Failed saving cert with CN: %s\nDN: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.SerialNumber, err)
 		}
@@ -151,6 +151,17 @@ func inputParser(c <-chan CTEntry, o chan<- CertInfo, db *sql.DB) {
 		default:
 			log.Printf("[-] Unknown entry type: %v (%v)", leaf.TimestampedEntry.EntryType, entry)
 			continue
+		}
+
+		if _, err := publicsuffix.EffectiveTLDPlusOne(cert.Subject.CommonName); err == nil {
+			// Make sure this looks like an actual hostname or IP address
+			if !(MatchIPv4.Match([]byte(cert.Subject.CommonName)) ||
+				MatchIPv6.Match([]byte(cert.Subject.CommonName))) &&
+				(strings.Contains(cert.Subject.CommonName, " ") ||
+					strings.Contains(cert.Subject.CommonName, ":") ||
+					strings.TrimSpace(cert.Subject.CommonName) == "") {
+				continue
+			}
 		}
 
 		// Valid input
@@ -237,10 +248,10 @@ func main() {
  	// Finished downloading, start working with the data
  	downloadEndTime := time.Now()
  	log.Println("Download duration = ", downloadEndTime.Sub(startTime))
- 	if inputCount != outputCount {
+	if inputCount != outputCount {
  		log.Printf("Input doesn't match output\n")
 	} else {
-		log.Printf("Input matches output\n")
+		log.Printf("Input matches output, %d\n", inputCount)
 	}
 
 	sqldb.ParseDownloadedCertificates(db)
