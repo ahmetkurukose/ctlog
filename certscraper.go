@@ -1,4 +1,4 @@
-package main
+package ctlog
 
 import (
 	"crypto/tls"

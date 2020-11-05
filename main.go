@@ -1,4 +1,4 @@
-package main
+package ctlog
 
 import (
 	sqldb "ctlog/db"
@@ -26,11 +26,7 @@ var MatchIPv6 = regexp.MustCompile(`^((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:
 // MatchIPv4 is a regular expression for validating IPv4 addresses
 var MatchIPv4 = regexp.MustCompile(`^(?:(?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2}))$`)
 
-type CertInfo struct {
-	CN string
-	DN string
-	SerialNumber string
-}
+
 
 var CTLogs = []string{
 	"https://ct.googleapis.com/logs/argon2019/",
@@ -105,7 +101,7 @@ func downloadHeads() {
 }
 
 //TODO: Probably not needed
-func outputWriter(o <-chan CertInfo, db *sql.DB) {
+func outputWriter(o <-chan sqldb.CertInfo, db *sql.DB) {
 	for name := range o {
 		_, err := db.Exec("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?)", name.CN, name.DN, name.SerialNumber)
 		if err != nil {
@@ -116,7 +112,7 @@ func outputWriter(o <-chan CertInfo, db *sql.DB) {
 	Wo.Done()
 }
 
-func inputParser(c <-chan CTEntry, o chan<- CertInfo, db *sql.DB) {
+func inputParser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 	for entry := range c {
 		var leaf ct.MerkleTreeLeaf
 
@@ -167,7 +163,7 @@ func inputParser(c <-chan CTEntry, o chan<- CertInfo, db *sql.DB) {
 		// Valid input
 		atomic.AddInt64(&inputCount, 1)
 
-		o <- CertInfo{
+		o <- sqldb.CertInfo{
 			CN:           cert.Subject.CommonName,
 			DN:           cert.Subject.String(),
 			SerialNumber: cert.SerialNumber.String(),
@@ -188,6 +184,8 @@ func main() {
 	flag.Parse()
 	db = sqldb.ConnectToDatabase()
 	defer sqldb.CloseConnection(db)
+
+	sqldb.Cleanup(db)
 
 	logIndexes := make(map[string]int64)
 	var err error
@@ -210,7 +208,7 @@ func main() {
 	c_inp := make(chan CTEntry)
 
 	// Output
-	c_out := make(chan CertInfo)
+	c_out := make(chan sqldb.CertInfo)
 
 	// Launch one input parser per core
 	for i := 0; i < runtime.NumCPU(); i++ {

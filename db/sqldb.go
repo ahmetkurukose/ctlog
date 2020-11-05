@@ -1,11 +1,19 @@
 package sqldb
 
 import (
+	"container/list"
 	"database/sql"
 	"fmt"
 	"log"
 	"strings"
 )
+
+type CertInfo struct {
+	CN string
+	DN string
+	SerialNumber string
+}
+
 
 // Creates a connection to the database and returns it
 func ConnectToDatabase() *sql.DB {
@@ -19,6 +27,10 @@ func ConnectToDatabase() *sql.DB {
 // Closes the database connection
 func CloseConnection(db *sql.DB) {
 	db.Close()
+}
+
+func Cleanup(db *sql.DB) {
+	db.Exec("DELETE FROM Downloaded")
 }
 
 // Returns a map of log URLs and their head indexes
@@ -102,6 +114,8 @@ func ParseDownloadedCertificates(db *sql.DB) {
 	// TODO: create map email->[]cert
 	// insert monitored
 
+	certsForEmail := make(map[string]*list.List)
+
 	for rows.Next() {
 		var (
 			email string
@@ -109,7 +123,18 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			DN string
 			serialnumber string
 		)
+
 		rows.Scan(&email, &CN, &DN, &serialnumber)
-		println(email, " ", CN, " ", DN, " ", serialnumber)
+		if val, ok := certsForEmail[email]; ok {
+			val.PushBack(CertInfo{CN, DN, serialnumber})
+		} else {
+			val = list.New()
+			val.PushBack(CertInfo{CN, DN, serialnumber})
+		}
+
+		// Insert monitored certs into database
+		db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?)", email, CN, DN)
 	}
+
+
 }
