@@ -1,4 +1,4 @@
-package ctlog
+package main
 
 import (
 	"crypto/tls"
@@ -74,7 +74,6 @@ func DownloadEntries(logurl string, startIndex int64, stopIndex int64) (CTEntrie
 	var entriesError CTEntriesError
 
 	url := fmt.Sprintf("%sct/v1/get-entries?start=%d&end=%d", logurl, startIndex, stopIndex)
-	println(url)
 	data, err := DownloadJSON(url)
 	if err != nil {
 		return entries, err
@@ -125,7 +124,6 @@ func DownloadLog(logurl string, c_inp chan<- CTEntry, startIndex int64, db *sql.
 		}
 
 		entries, err := DownloadEntries(logurl, index, stopIndex)
-		println(len(entries.Entries))
 		if err != nil {
 			log.Printf("[-] Failed to download entries for %s: index %d -> %s\n", logurl, index, err)
 			return

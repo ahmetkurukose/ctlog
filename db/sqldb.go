@@ -29,7 +29,7 @@ func CloseConnection(db *sql.DB) {
 	db.Close()
 }
 
-func Cleanup(db *sql.DB) {
+func CleanupDownloadTable(db *sql.DB) {
 	db.Exec("DELETE FROM Downloaded")
 }
 
@@ -118,9 +118,9 @@ func ParseDownloadedCertificates(db *sql.DB) {
 
 	for rows.Next() {
 		var (
-			email string
-			CN string
-			DN string
+			email        string
+			CN           string
+			DN           string
 			serialnumber string
 		)
 
@@ -128,13 +128,21 @@ func ParseDownloadedCertificates(db *sql.DB) {
 		if val, ok := certsForEmail[email]; ok {
 			val.PushBack(CertInfo{CN, DN, serialnumber})
 		} else {
-			val = list.New()
-			val.PushBack(CertInfo{CN, DN, serialnumber})
+			certsForEmail[email] = list.New()
+			certsForEmail[email].PushBack(CertInfo{CN, DN, serialnumber})
 		}
-
-		// Insert monitored certs into database
-		db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?)", email, CN, DN)
 	}
 
+	log.Println("CERTS ARE IN MAP, INSERTING INTO DATABASE")
+	for _, certList := range certsForEmail {
+	//for email, certList := range certsForEmail {
+		for e := certList.Front(); e != nil; e = e.Next() {
+			cert := e.Value.(CertInfo)
+			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber)
+		}
+	}
 
+	// TODO: send emails
+
+	CleanupDownloadTable(db)
 }

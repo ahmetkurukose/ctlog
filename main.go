@@ -1,4 +1,4 @@
-package ctlog
+package main
 
 import (
 	sqldb "ctlog/db"
@@ -90,7 +90,7 @@ func usage() {
 	flag.PrintDefaults()
 }
 
-func downloadHeads() {
+func downloadHeads(db *sql.DB) {
 	for l := range CTLogs {
 		head, err := DownloadSTH(CTLogs[l])
 		if err != nil {
@@ -175,6 +175,7 @@ func inputParser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 
 func main() {
 	startTime := time.Now()
+	log.Println("STARTING")
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	os.Setenv("LC_ALL", "C")
 
@@ -184,8 +185,6 @@ func main() {
 	flag.Parse()
 	db = sqldb.ConnectToDatabase()
 	defer sqldb.CloseConnection(db)
-
-	sqldb.Cleanup(db)
 
 	logIndexes := make(map[string]int64)
 	var err error
@@ -245,6 +244,7 @@ func main() {
 
  	// Finished downloading, start working with the data
  	downloadEndTime := time.Now()
+ 	log.Println("FINISHED DOWNLOADING")
  	log.Println("Download duration = ", downloadEndTime.Sub(startTime))
 	if inputCount != outputCount {
  		log.Printf("Input doesn't match output\n")
@@ -253,4 +253,5 @@ func main() {
 	}
 
 	sqldb.ParseDownloadedCertificates(db)
+ 	log.Println("FINISHED PARSING, EXITING")
 }
