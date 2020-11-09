@@ -13,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"runtime/pprof"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -80,7 +81,6 @@ var outputCount int64 = 0
 var inputCount int64 = 0
 var db *sql.DB
 
-
 func usage() {
 	fmt.Println("Usage: " + os.Args[0] + " [options]")
 	fmt.Println("")
@@ -102,8 +102,10 @@ func downloadHeads(db *sql.DB) {
 
 //TODO: Probably not needed
 func outputWriter(o <-chan sqldb.CertInfo, db *sql.DB) {
+	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?)")
+	defer q.Close()
 	for name := range o {
-		_, err := db.Exec("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?)", name.CN, name.DN, name.SerialNumber)
+		_, err := q.Exec( name.CN, name.DN, name.SerialNumber)
 		if err != nil {
 			log.Printf("Failed saving cert with CN: %s\nDN: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.SerialNumber, err)
 		}
@@ -129,7 +131,6 @@ func inputParser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 
 		switch leaf.TimestampedEntry.EntryType {
 		case ct.X509LogEntryType:
-
 			cert, err = x509.ParseCertificate(leaf.TimestampedEntry.X509Entry.Data)
 			if err != nil && !strings.Contains(err.Error(), "NonFatalErrors:") {
 				log.Printf("[-] Failed to parse cert: %s\n", err.Error())
@@ -137,7 +138,6 @@ func inputParser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			}
 
 		case ct.PrecertLogEntryType:
-
 			cert, err = x509.ParseTBSCertificate(leaf.TimestampedEntry.PrecertEntry.TBSCertificate)
 			if err != nil && !strings.Contains(err.Error(), "NonFatalErrors:") {
 				log.Printf("[-] Failed to parse precert: %s\n", err.Error())
@@ -181,11 +181,28 @@ func main() {
 
 	flag.Usage = func() { usage() }
 	logurl := flag.String("logurl", "", "Only read from the specified CT log url")
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 
+
+	//-------PROFILING
 	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+	//-------
+
+
+
 	db = sqldb.ConnectToDatabase()
 	defer sqldb.CloseConnection(db)
+	sqldb.CleanupDownloadTable(db)
 
+	//downloadHeads(db)
 	logIndexes := make(map[string]int64)
 	var err error
 	// Distinguish between single and all log check
@@ -201,6 +218,16 @@ func main() {
 			log.Fatal("[-] Error while fetching logs, closing -> ", err)
 		}
 	}
+
+	// Show info about how many entries we will have to download
+	var all int64 = 0
+	for u, i := range logIndexes {
+		s, _ := DownloadSTH(u)
+		//println(u, "ct/v1/get-entries?start=", i, "&end=", s.TreeSize, "   ", s.TreeSize - i)
+		all += s.TreeSize - i
+		fmt.Printf("%sct/v1/get-entries?start=%d&end=%d     %d\n", u, i, s.TreeSize - 1, s.TreeSize - i)
+	}
+	println(all)
 
 
 	// Input
@@ -219,12 +246,13 @@ func main() {
 	go outputWriter(c_out, db)
 	Wo.Add(1)
 
+
 	// Start downloading for each log
  	for url, headIndex := range logIndexes {
-		go DownloadLog(url, c_inp, headIndex, db)
+		go DownloadLog(url, c_inp, headIndex, db, 10)
+		//DownloadLog(url, c_inp, headIndex, db, 10)
 		Wd.Add(1)
 	}
-
 
 	// Wait for downloaders
 	Wd.Wait()
@@ -246,11 +274,6 @@ func main() {
  	downloadEndTime := time.Now()
  	log.Println("FINISHED DOWNLOADING")
  	log.Println("Download duration = ", downloadEndTime.Sub(startTime))
-	if inputCount != outputCount {
- 		log.Printf("Input doesn't match output\n")
-	} else {
-		log.Printf("Input matches output, %d\n", inputCount)
-	}
 
 	sqldb.ParseDownloadedCertificates(db)
  	log.Println("FINISHED PARSING, EXITING")

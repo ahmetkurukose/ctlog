@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 var Wd sync.WaitGroup
@@ -94,7 +95,7 @@ func DownloadEntries(logurl string, startIndex int64, stopIndex int64) (CTEntrie
 // Downloads the CT Head of the log.
 func DownloadSTH(logurl string) (CTHead, error) {
 	var sth CTHead
-	url := fmt.Sprintf("%s/ct/v1/get-sth", logurl)
+	url := fmt.Sprintf("%sct/v1/get-sth", logurl)
 	data, err := DownloadJSON(url)
 	if err != nil {
 		return sth, err
@@ -104,10 +105,30 @@ func DownloadSTH(logurl string) (CTHead, error) {
 	return sth, err
 }
 
+func downloadBatch(logurl string ,index int64, stopIndex int64, c_inp chan<- CTEntry) {
+	const RETRY_WAIT int = 1
+	entries, err := DownloadEntries(logurl, index, stopIndex)
+
+	//Keep retrying
+	attempts := 0
+	for err != nil {
+		time.Sleep(time.Duration(RETRY_WAIT) * time.Second)
+		//log.Printf("[-] (%d) Failed to download entries for %s: index %d -> %s\n", attempts, logurl, index, err)
+		entries, err = DownloadEntries(logurl, index, stopIndex)
+		attempts++
+		if attempts >= 10 {
+			log.Printf("[-] Canceling, failed to download entries for %s: index %d -> %s\n", logurl, index, err)
+			return
+		}
+	}
+	for entryIndex := range entries.Entries {
+		c_inp <- entries.Entries[entryIndex]
+	}
+}
+
 // Goroutine that downloads log entries in batches of ENTRY_COUNT.
-// It updates the log's head index in the database.
-func DownloadLog(logurl string, c_inp chan<- CTEntry, startIndex int64, db *sql.DB) {
-	const ENTRY_COUNT int64 = 1000
+// Updates the log's head index in the database.
+func DownloadLog(logurl string, c_inp chan<- CTEntry, startIndex int64, db *sql.DB, batchSize int64) {
 	defer Wd.Done()
 
 	sth, err := DownloadSTH(logurl)
@@ -116,21 +137,15 @@ func DownloadLog(logurl string, c_inp chan<- CTEntry, startIndex int64, db *sql.
 		return
 	}
 
-	// Start the download
-	for index := startIndex; index < sth.TreeSize; index += ENTRY_COUNT {
-		stopIndex := index + ENTRY_COUNT - 1
+	// Start the downloading
+	//TODO: make it concurrent
+	for index := startIndex; index < sth.TreeSize; index += batchSize {
+		stopIndex := index + batchSize - 1
 		if stopIndex >= sth.TreeSize {
 			stopIndex = sth.TreeSize - 1
 		}
 
-		entries, err := DownloadEntries(logurl, index, stopIndex)
-		if err != nil {
-			log.Printf("[-] Failed to download entries for %s: index %d -> %s\n", logurl, index, err)
-			return
-		}
-		for entryIndex := range entries.Entries {
-			c_inp <- entries.Entries[entryIndex]
-		}
+		downloadBatch(logurl, index, stopIndex, c_inp)
 	}
 
 	// Update head index

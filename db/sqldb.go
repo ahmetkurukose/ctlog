@@ -33,6 +33,10 @@ func CleanupDownloadTable(db *sql.DB) {
 	db.Exec("DELETE FROM Downloaded")
 }
 
+func SendEmail(email string, certList *list.List) {
+
+}
+
 // Returns a map of log URLs and their head indexes
 func GetLogURLsAndIndexes(db *sql.DB) (map[string]int64, error) {
 	resultMap := make(map[string]int64)
@@ -134,15 +138,13 @@ func ParseDownloadedCertificates(db *sql.DB) {
 	}
 
 	log.Println("CERTS ARE IN MAP, INSERTING INTO DATABASE")
-	for _, certList := range certsForEmail {
-	//for email, certList := range certsForEmail {
+	for email, certList := range certsForEmail {
+		SendEmail(email, certList)
 		for e := certList.Front(); e != nil; e = e.Next() {
 			cert := e.Value.(CertInfo)
 			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber)
 		}
 	}
-
-	// TODO: send emails
 
 	CleanupDownloadTable(db)
 }
