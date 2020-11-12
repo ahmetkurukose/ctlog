@@ -18,6 +18,12 @@ var Wd sync.WaitGroup
 var Wi sync.WaitGroup
 var Wo sync.WaitGroup
 
+type CTBatchData struct {
+	Url string
+	StartIndex int64
+	StopIndex int64
+}
+
 type CTEntry struct {
 	LeafInput []byte `json:"leaf_input"`
 	ExtraData []byte `json:"extra_data"`
@@ -105,7 +111,9 @@ func DownloadSTH(logurl string) (CTHead, error) {
 	return sth, err
 }
 
-func downloadBatch(logurl string ,index int64, stopIndex int64, c_inp chan<- CTEntry) {
+func downloadBatch(logurl string ,index int64, stopIndex int64, c_inp chan<- CTEntry, wd *sync.WaitGroup) {
+	//defer println(timeTrack(time.Now()).String())
+	defer wd.Done()
 	const RETRY_WAIT int = 1
 	entries, err := DownloadEntries(logurl, index, stopIndex)
 
@@ -138,20 +146,45 @@ func DownloadLog(logurl string, c_inp chan<- CTEntry, startIndex int64, db *sql.
 	}
 
 	// Start the downloading
-	//TODO: make it concurrent
+	var wait_download sync.WaitGroup
 	for index := startIndex; index < sth.TreeSize; index += batchSize {
 		stopIndex := index + batchSize - 1
 		if stopIndex >= sth.TreeSize {
 			stopIndex = sth.TreeSize - 1
 		}
 
-		downloadBatch(logurl, index, stopIndex, c_inp)
+		wait_download.Add(1)
+		go downloadBatch(logurl, index, stopIndex, c_inp, &wait_download)
 	}
+	wait_download.Wait()
 
 	// Update head index
 	_, err = db.Exec("UPDATE CTLog SET lastIndex = ? WHERE url = ?", sth.TreeSize, logurl)
 	if err != nil {
 		log.Printf("[-] Failed to update head index of log %s -> %s\n", logurl, err)
 		return
+	}
+}
+
+// Removes from
+func batchDownloader(c_down <-chan CTBatchData, startIndex int64, stopIndexint64, c_inp chan<- CTEntry) {
+	const RETRY_WAIT int = 1
+	for batch := range c_down {
+		entries, err := DownloadEntries(batch.Url, batch.StartIndex, batch.StopIndex)
+
+		attempts := 0
+		for err != nil {
+			time.Sleep(time.Duration(RETRY_WAIT) * time.Second)
+			//log.Printf("[-] (%d) Failed to download entries for %s: index %d -> %s\n", attempts, logurl, index, err)
+			entries, err = DownloadEntries(batch.Url, batch.StartIndex, batch.StopIndex)
+			attempts++
+			if attempts >= 10 {
+				log.Printf("[-] Canceling, failed to download entries for %s: index %d -> %s\n", batch.Url, batch.StartIndex, batch.StopIndex)
+				return
+			}
+		}
+		for entryIndex := range entries.Entries {
+			c_inp <- entries.Entries[entryIndex]
+		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -80,6 +81,8 @@ var CTLogs = []string{
 var outputCount int64 = 0
 var inputCount int64 = 0
 var db *sql.DB
+var startTime time.Time
+var dbMut sync.Mutex
 
 func usage() {
 	fmt.Println("Usage: " + os.Args[0] + " [options]")
@@ -100,21 +103,36 @@ func downloadHeads(db *sql.DB) {
 	}
 }
 
-//TODO: Probably not needed
+
 func outputWriter(o <-chan sqldb.CertInfo, db *sql.DB) {
 	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?)")
 	defer q.Close()
+	//count := 0
 	for name := range o {
-		_, err := q.Exec( name.CN, name.DN, name.SerialNumber)
+		//TODO: mutex possibly redundant
+		//dbMut.Lock()
+		_, err := q.Exec(name.CN, name.DN, name.SerialNumber)
 		if err != nil {
 			log.Printf("Failed saving cert with CN: %s\nDN: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.SerialNumber, err)
 		}
+		//dbMut.Unlock()
 		atomic.AddInt64(&outputCount, 1)
+
+		//count++
+		//if count == 1000 {
+		//	end := time.Now()
+		//	println("O", end.Sub(startTime).String())
+		//	count = 0
+		//}
 	}
 	Wo.Done()
 }
 
-func inputParser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
+
+// Repeatedly takes out and parses Merkle tree leaf into a certificate attributes
+// Sends the result into the database inserter
+func inputParser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
+	//count := 0
 	for entry := range c {
 		var leaf ct.MerkleTreeLeaf
 
@@ -168,13 +186,16 @@ func inputParser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			DN:           cert.Subject.String(),
 			SerialNumber: cert.SerialNumber.String(),
 		}
+
+		//count++
+		//println(count)
 	}
 
 	Wi.Done()
 }
 
 func main() {
-	startTime := time.Now()
+	const LIMIT = 10240
 	log.Println("STARTING")
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	os.Setenv("LC_ALL", "C")
@@ -183,9 +204,9 @@ func main() {
 	logurl := flag.String("logurl", "", "Only read from the specified CT log url")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 
-
-	//-------PROFILING
 	flag.Parse()
+
+	//-------PROFILING---------
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
@@ -194,8 +215,7 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
-	//-------
-
+	//-------------------------
 
 
 	db = sqldb.ConnectToDatabase()
@@ -238,7 +258,7 @@ func main() {
 
 	// Launch one input parser per core
 	for i := 0; i < runtime.NumCPU(); i++ {
-		go inputParser(c_inp, c_out, db)
+		go inputParser(i, c_inp, c_out, db)
 	}
 	Wi.Add(runtime.NumCPU())
 
@@ -246,7 +266,7 @@ func main() {
 	go outputWriter(c_out, db)
 	Wo.Add(1)
 
-
+	startTime = time.Now()
 	// Start downloading for each log
  	for url, headIndex := range logIndexes {
 		go DownloadLog(url, c_inp, headIndex, db, 10)

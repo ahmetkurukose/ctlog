@@ -99,10 +99,7 @@ func IsDomainMonitored(names map[string]struct{}, db *sql.DB) (bool, error) {
 }
 
 func ParseDownloadedCertificates(db *sql.DB) {
-	//TODO: find CN with monitored domains
-	//		put them into one string we can send with an email
-
-	println("WOULD BE PARSING")
+	println("PARSING")
 
 	query := `
 		SELECT email, CN, DN, serialnumber
@@ -114,9 +111,6 @@ func ParseDownloadedCertificates(db *sql.DB) {
 		log.Printf("[-] Error while parsing downloaded certificates -> %s\n", err)
 	}
 	defer rows.Close()
-
-	// TODO: create map email->[]cert
-	// insert monitored
 
 	certsForEmail := make(map[string]*list.List)
 
@@ -146,5 +140,5 @@ func ParseDownloadedCertificates(db *sql.DB) {
 		}
 	}
 
-	CleanupDownloadTable(db)
+	//CleanupDownloadTable(db)
 }

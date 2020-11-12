@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
-    <data-source source="LOCAL" name="certdb" uuid="be21c77b-44ef-4b26-b517-d9345d4cc92d">
+    <data-source source="LOCAL" name="certdbsqlite" uuid="be21c77b-44ef-4b26-b517-d9345d4cc92d">
       <driver-ref>sqlite.xerial</driver-ref>
       <synchronize>true</synchronize>
       <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
