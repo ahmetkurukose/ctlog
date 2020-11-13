@@ -15,8 +15,9 @@ import (
 )
 
 var Wd sync.WaitGroup
-var Wi sync.WaitGroup
+var Wp sync.WaitGroup
 var Wo sync.WaitGroup
+var Wg sync.WaitGroup
 
 type CTBatchData struct {
 	Url string
@@ -46,7 +47,7 @@ type CTHead struct {
 }
 
 // Downloads the entries as JSON.
-func DownloadJSON(url string) ([]byte, error) {
+func downloadJSON(url string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte{}, err
@@ -76,12 +77,11 @@ func DownloadJSON(url string) ([]byte, error) {
 }
 
 // Downloads entries and returns them.
-func DownloadEntries(logurl string, startIndex int64, stopIndex int64) (CTEntries, error) {
+func DownloadEntries(url string) (CTEntries, error) {
 	var entries CTEntries
 	var entriesError CTEntriesError
 
-	url := fmt.Sprintf("%sct/v1/get-entries?start=%d&end=%d", logurl, startIndex, stopIndex)
-	data, err := DownloadJSON(url)
+	data, err := downloadJSON(url)
 	if err != nil {
 		return entries, err
 	}
@@ -102,7 +102,7 @@ func DownloadEntries(logurl string, startIndex int64, stopIndex int64) (CTEntrie
 func DownloadSTH(logurl string) (CTHead, error) {
 	var sth CTHead
 	url := fmt.Sprintf("%sct/v1/get-sth", logurl)
-	data, err := DownloadJSON(url)
+	data, err := downloadJSON(url)
 	if err != nil {
 		return sth, err
 	}
@@ -111,80 +111,50 @@ func DownloadSTH(logurl string) (CTHead, error) {
 	return sth, err
 }
 
-func downloadBatch(logurl string ,index int64, stopIndex int64, c_inp chan<- CTEntry, wd *sync.WaitGroup) {
-	//defer println(timeTrack(time.Now()).String())
-	defer wd.Done()
-	const RETRY_WAIT int = 1
-	entries, err := DownloadEntries(logurl, index, stopIndex)
 
-	//Keep retrying
-	attempts := 0
-	for err != nil {
-		time.Sleep(time.Duration(RETRY_WAIT) * time.Second)
-		//log.Printf("[-] (%d) Failed to download entries for %s: index %d -> %s\n", attempts, logurl, index, err)
-		entries, err = DownloadEntries(logurl, index, stopIndex)
-		attempts++
-		if attempts >= 10 {
-			log.Printf("[-] Canceling, failed to download entries for %s: index %d -> %s\n", logurl, index, err)
-			return
-		}
-	}
-	for entryIndex := range entries.Entries {
-		c_inp <- entries.Entries[entryIndex]
-	}
-}
-
-// Goroutine that downloads log entries in batches of ENTRY_COUNT.
-// Updates the log's head index in the database.
-func DownloadLog(logurl string, c_inp chan<- CTEntry, startIndex int64, db *sql.DB, batchSize int64) {
-	defer Wd.Done()
-
-	sth, err := DownloadSTH(logurl)
-	if err != nil {
-		log.Printf("[-] Failed to download STH for %s -> %s\n", logurl, err)
-		return
-	}
-
-	// Start the downloading
-	var wait_download sync.WaitGroup
-	for index := startIndex; index < sth.TreeSize; index += batchSize {
-		stopIndex := index + batchSize - 1
-		if stopIndex >= sth.TreeSize {
-			stopIndex = sth.TreeSize - 1
-		}
-
-		wait_download.Add(1)
-		go downloadBatch(logurl, index, stopIndex, c_inp, &wait_download)
-	}
-	wait_download.Wait()
-
-	// Update head index
-	_, err = db.Exec("UPDATE CTLog SET lastIndex = ? WHERE url = ?", sth.TreeSize, logurl)
+func UpdateLogIndex(index int64, logurl string) {
+	_, err := db.Exec("UPDATE CTLog SET lastIndex = ? WHERE url = ?", index, logurl)
 	if err != nil {
 		log.Printf("[-] Failed to update head index of log %s -> %s\n", logurl, err)
 		return
 	}
 }
 
-// Removes from
-func batchDownloader(c_down <-chan CTBatchData, startIndex int64, stopIndexint64, c_inp chan<- CTEntry) {
+
+// Generates urls batches of data, sends them to the download channel
+func BatchGenerator(c_down chan<- string, logurl string, startIndex int64, stopIndex int64, db *sql.DB, batchSize int64) {
+	defer Wg.Done()
+	for cur := startIndex; cur < stopIndex; cur += batchSize {
+		curStop := cur + batchSize - 1
+		if curStop >= stopIndex {
+			curStop = stopIndex - 1
+		}
+
+		c_down <- fmt.Sprintf("%sct/v1/get-entries?start=%d&end=%d", logurl, cur, curStop)
+	}
+}
+
+
+// Removes url, start and stop index from to-download channel, downloads the entries and sends them over to the parsers.
+func BatchDownloader(c_down <-chan string, c_parse chan<- CTEntry) {
+	defer Wd.Done()
 	const RETRY_WAIT int = 1
-	for batch := range c_down {
-		entries, err := DownloadEntries(batch.Url, batch.StartIndex, batch.StopIndex)
+	for url := range c_down {
+		entries, err := DownloadEntries(url)
 
 		attempts := 0
 		for err != nil {
 			time.Sleep(time.Duration(RETRY_WAIT) * time.Second)
 			//log.Printf("[-] (%d) Failed to download entries for %s: index %d -> %s\n", attempts, logurl, index, err)
-			entries, err = DownloadEntries(batch.Url, batch.StartIndex, batch.StopIndex)
+			entries, err = DownloadEntries(url)
 			attempts++
 			if attempts >= 10 {
-				log.Printf("[-] Canceling, failed to download entries for %s: index %d -> %s\n", batch.Url, batch.StartIndex, batch.StopIndex)
+				log.Printf("[-] Canceling, failed to download entries for %s -> %s\n", url, err)
 				return
 			}
 		}
 		for entryIndex := range entries.Entries {
-			c_inp <- entries.Entries[entryIndex]
+			c_parse <- entries.Entries[entryIndex]
 		}
 	}
 }

@@ -93,7 +93,7 @@ func usage() {
 	flag.PrintDefaults()
 }
 
-func downloadHeads(db *sql.DB) {
+func downloadAndUpdateHeads(db *sql.DB) {
 	for l := range CTLogs {
 		head, err := DownloadSTH(CTLogs[l])
 		if err != nil {
@@ -103,6 +103,31 @@ func downloadHeads(db *sql.DB) {
 	}
 }
 
+
+//THE GOOD ONE
+func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error){
+	resultMap := make(map[string]sqldb.CTLogInfo)
+	rows, err := db.Query("SELECT url, lastIndex FROM CTLog")
+	if err != nil {
+		log.Fatal("[-] Failed to query logurls from database -> ", err, "\n")
+	}
+	for rows.Next() {
+		var url string
+		var lastIndex int64
+		err = rows.Scan(&url, &lastIndex)
+		if err != nil {
+			return nil, err
+		}
+
+		sth, err := DownloadSTH(url)
+		if err != nil {
+			return nil, err
+		}
+		resultMap[url] = sqldb.CTLogInfo{lastIndex, sth.TreeSize}
+	}
+
+	return &resultMap, err
+}
 
 func outputWriter(o <-chan sqldb.CertInfo, db *sql.DB) {
 	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?)")
@@ -129,10 +154,11 @@ func outputWriter(o <-chan sqldb.CertInfo, db *sql.DB) {
 }
 
 
-// Repeatedly takes out and parses Merkle tree leaf into a certificate attributes
+// Takes out and parses Merkle tree leaf into a certificate info struct
 // Sends the result into the database inserter
-func inputParser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
+func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 	//count := 0
+	defer Wp.Done()
 	for entry := range c {
 		var leaf ct.MerkleTreeLeaf
 
@@ -190,8 +216,6 @@ func inputParser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) 
 		//count++
 		//println(count)
 	}
-
-	Wi.Done()
 }
 
 func main() {
@@ -222,77 +246,97 @@ func main() {
 	defer sqldb.CloseConnection(db)
 	sqldb.CleanupDownloadTable(db)
 
-	//downloadHeads(db)
-	logIndexes := make(map[string]int64)
+	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
 	// Distinguish between single and all log check
+	// TODO: beautify this
 	if *logurl != "" {
 		index, err := sqldb.GetLogIndex(*logurl, db)
 		if err != nil {
 			log.Fatal("[-] Error while fetching log, closing -> err", err)
 		}
-		logIndexes[*logurl] = index
+		sth, err := DownloadSTH(*logurl)
+		if err != nil {
+			log.Fatal("[-] Error while fetching log, closing -> err", err)
+		}
+		*logInfos = make(map[string]sqldb.CTLogInfo)
+		(*logInfos)[*logurl] = sqldb.CTLogInfo{index, sth.TreeSize}
 	} else {
-		logIndexes, err = sqldb.GetLogURLsAndIndexes(db)
+		logInfos, err = downloadHeads(db)
 		if err != nil {
 			log.Fatal("[-] Error while fetching logs, closing -> ", err)
 		}
 	}
 
-	// Show info about how many entries we will have to download
 	var all int64 = 0
-	for u, i := range logIndexes {
-		s, _ := DownloadSTH(u)
-		//println(u, "ct/v1/get-entries?start=", i, "&end=", s.TreeSize, "   ", s.TreeSize - i)
-		all += s.TreeSize - i
-		fmt.Printf("%sct/v1/get-entries?start=%d&end=%d     %d\n", u, i, s.TreeSize - 1, s.TreeSize - i)
+	for u, i := range *logInfos {
+		all += i.NewHeadIndex - i.OldHeadIndex
+		fmt.Printf("%sct/v1/get-entries?start=%d&end=%d     %d\n", u, i.OldHeadIndex, i.NewHeadIndex - 1, i.NewHeadIndex - i.OldHeadIndex)
 	}
-	println(all)
+	println("TO DOWNLOAD: ", all)
 
 
-	// Input
-	c_inp := make(chan CTEntry)
+	// Create channels
 
-	// Output
-	c_out := make(chan sqldb.CertInfo)
+	// Downloading
+	c_down := make(chan string)
+
+	// Parsing
+	c_parse := make(chan CTEntry)
+
+	// Inserting into database
+	c_insert := make(chan sqldb.CertInfo)
+
 
 	// Launch one input parser per core
 	for i := 0; i < runtime.NumCPU(); i++ {
-		go inputParser(i, c_inp, c_out, db)
+		go parser(i, c_parse, c_insert, db)
 	}
-	Wi.Add(runtime.NumCPU())
+	Wp.Add(runtime.NumCPU())
+
+	// Launch downloaders, not sure about the number
+	const DOWNLOADER_NUMBER = 20
+	for i:= 0; i < DOWNLOADER_NUMBER; i++ {
+		go BatchDownloader(c_down, c_parse)
+	}
+	Wd.Add(DOWNLOADER_NUMBER)
 
 	// Launch a single output writer
-	go outputWriter(c_out, db)
+	go outputWriter(c_insert, db)
 	Wo.Add(1)
 
 	startTime = time.Now()
-	// Start downloading for each log
- 	for url, headIndex := range logIndexes {
-		go DownloadLog(url, c_inp, headIndex, db, 10)
-		//DownloadLog(url, c_inp, headIndex, db, 10)
-		Wd.Add(1)
+	// Start queueing downloads for each log
+	// TODO: optimize batch size
+ 	for url, headInfo := range *logInfos {
+ 		go BatchGenerator(c_down, url, headInfo.OldHeadIndex, headInfo.NewHeadIndex, db, 10)
+		Wg.Add(1)
 	}
 
-	// Wait for downloaders
-	Wd.Wait()
+	// Wait for generators
+	Wg.Wait()
 
-	// Close the input channel
-	close(c_inp)
+ 	// Close to-download channel
+ 	close(c_down)
 
-	// Wait for the input parsers
-	Wi.Wait()
+ 	// Wait for downloaders
+ 	Wd.Wait()
 
-	// Close the output handle
-	close(c_out)
+ 	// Close to-parse channel
+	close(c_parse)
 
-	// Wait for the output goroutine
-	Wo.Wait()
+ 	// Wait for parsers
+ 	Wp.Wait()
 
+ 	// Close to-insert channel
+ 	close(c_insert)
 
- 	// Finished downloading, start working with the data
+ 	// Wait for the inserter
+ 	Wo.Wait()
+
+ 	// Finished inserting, start working with the data
  	downloadEndTime := time.Now()
- 	log.Println("FINISHED DOWNLOADING")
+ 	log.Println("FINISHED DOWNLOADING AND INSERTING")
  	log.Println("Download duration = ", downloadEndTime.Sub(startTime))
 
 	sqldb.ParseDownloadedCertificates(db)

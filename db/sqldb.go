@@ -14,6 +14,11 @@ type CertInfo struct {
 	SerialNumber string
 }
 
+type CTLogInfo struct {
+	OldHeadIndex int64
+	NewHeadIndex int64
+}
+
 
 // Creates a connection to the database and returns it
 func ConnectToDatabase() *sql.DB {
@@ -35,27 +40,6 @@ func CleanupDownloadTable(db *sql.DB) {
 
 func SendEmail(email string, certList *list.List) {
 
-}
-
-// Returns a map of log URLs and their head indexes
-func GetLogURLsAndIndexes(db *sql.DB) (map[string]int64, error) {
-	resultMap := make(map[string]int64)
-	rows, err := db.Query("SELECT url, lastIndex FROM CTLog")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var url string
-		var lastIndex int64
-		err := rows.Scan(&url, &lastIndex)
-		if err != nil {
-			return nil, err
-		}
-		resultMap[url] = lastIndex
-	}
-
-	return resultMap, err
 }
 
 // Returns previous head index of a log
