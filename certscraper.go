@@ -135,7 +135,8 @@ func BatchGenerator(c_down chan<- string, logurl string, startIndex int64, stopI
 }
 
 
-// Removes url, start and stop index from to-download channel, downloads the entries and sends them over to the parsers.
+// Removes url, start and stop index from to-download channel,
+// downloads the entries and sends them over to the parsers.
 func BatchDownloader(c_down <-chan string, c_parse chan<- CTEntry) {
 	defer Wd.Done()
 	const RETRY_WAIT int = 1
@@ -144,13 +145,12 @@ func BatchDownloader(c_down <-chan string, c_parse chan<- CTEntry) {
 
 		attempts := 0
 		for err != nil {
-			time.Sleep(time.Duration(RETRY_WAIT) * time.Second)
+			time.Sleep(time.Duration(RETRY_WAIT * attempts) * time.Second)
 			//log.Printf("[-] (%d) Failed to download entries for %s: index %d -> %s\n", attempts, logurl, index, err)
 			entries, err = DownloadEntries(url)
 			attempts++
 			if attempts >= 10 {
-				log.Printf("[-] Canceling, failed to download entries for %s -> %s\n", url, err)
-				return
+				log.Printf("[-] Failed to download entries for %s -> %s\n", url, err)
 			}
 		}
 		for entryIndex := range entries.Entries {

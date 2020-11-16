@@ -29,7 +29,6 @@ var MatchIPv6 = regexp.MustCompile(`^((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:
 var MatchIPv4 = regexp.MustCompile(`^(?:(?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2}))$`)
 
 
-
 var CTLogs = []string{
 	"https://ct.googleapis.com/logs/argon2019/",
 	"https://ct.googleapis.com/logs/argon2020/",
@@ -84,6 +83,13 @@ var db *sql.DB
 var startTime time.Time
 var dbMut sync.Mutex
 
+const INSERT_BUFFER_SIZE = 10000
+const FILE_LIMIT = 10240
+const DOWNLOADER_COUNT = 20
+const DOWNLOAD_BUFFER_SIZE = 50
+const PARSE_BUFFER_SIZE = 2
+const BATCH_SIZE = 10
+
 func usage() {
 	fmt.Println("Usage: " + os.Args[0] + " [options]")
 	fmt.Println("")
@@ -129,7 +135,7 @@ func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error){
 	return &resultMap, err
 }
 
-func outputWriter(o <-chan sqldb.CertInfo, db *sql.DB) {
+func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?)")
 	defer q.Close()
 	//count := 0
@@ -219,7 +225,6 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 }
 
 func main() {
-	const LIMIT = 10240
 	log.Println("STARTING")
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	os.Setenv("LC_ALL", "C")
@@ -246,10 +251,11 @@ func main() {
 	defer sqldb.CloseConnection(db)
 	sqldb.CleanupDownloadTable(db)
 
+	//downloadAndUpdateHeads(db)
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
 	// Distinguish between single and all log check
-	// TODO: beautify this
+	// TODO: simplify this
 	if *logurl != "" {
 		index, err := sqldb.GetLogIndex(*logurl, db)
 		if err != nil {
@@ -279,13 +285,13 @@ func main() {
 	// Create channels
 
 	// Downloading
-	c_down := make(chan string)
+	c_down := make(chan string, DOWNLOAD_BUFFER_SIZE)
 
 	// Parsing
-	c_parse := make(chan CTEntry)
+	c_parse := make(chan CTEntry, PARSE_BUFFER_SIZE)
 
 	// Inserting into database
-	c_insert := make(chan sqldb.CertInfo)
+	c_insert := make(chan sqldb.CertInfo, INSERT_BUFFER_SIZE)
 
 
 	// Launch one input parser per core
@@ -295,21 +301,22 @@ func main() {
 	Wp.Add(runtime.NumCPU())
 
 	// Launch downloaders, not sure about the number
-	const DOWNLOADER_NUMBER = 20
-	for i:= 0; i < DOWNLOADER_NUMBER; i++ {
+	for i:= 0; i < DOWNLOADER_COUNT; i++ {
 		go BatchDownloader(c_down, c_parse)
 	}
-	Wd.Add(DOWNLOADER_NUMBER)
+	Wd.Add(DOWNLOADER_COUNT)
 
 	// Launch a single output writer
-	go outputWriter(c_insert, db)
+	go inserter(c_insert, db)
 	Wo.Add(1)
 
+	// Start timer for download
 	startTime = time.Now()
+
 	// Start queueing downloads for each log
 	// TODO: optimize batch size
  	for url, headInfo := range *logInfos {
- 		go BatchGenerator(c_down, url, headInfo.OldHeadIndex, headInfo.NewHeadIndex, db, 10)
+ 		go BatchGenerator(c_down, url, headInfo.OldHeadIndex, headInfo.NewHeadIndex, db, BATCH_SIZE)
 		Wg.Add(1)
 	}
 
@@ -321,24 +328,28 @@ func main() {
 
  	// Wait for downloaders
  	Wd.Wait()
+	downloadEndTime := time.Now()
+	log.Println("FINISHED DOWNLOADING")
+	log.Println("Download duration = ", downloadEndTime.Sub(startTime))
 
  	// Close to-parse channel
 	close(c_parse)
 
  	// Wait for parsers
  	Wp.Wait()
+	//parserEndTime := time.Now()
+	log.Println("FINISHED PARSING")
+
 
  	// Close to-insert channel
  	close(c_insert)
 
  	// Wait for the inserter
  	Wo.Wait()
+	//insertEndTime := time.Now()
 
  	// Finished inserting, start working with the data
- 	downloadEndTime := time.Now()
- 	log.Println("FINISHED DOWNLOADING AND INSERTING")
- 	log.Println("Download duration = ", downloadEndTime.Sub(startTime))
-
+ 	log.Println("FINISHED INSERTING")
 	sqldb.ParseDownloadedCertificates(db)
- 	log.Println("FINISHED PARSING, EXITING")
+ 	log.Println("FINISHED SENDING EMAILS, EXITING")
 }
