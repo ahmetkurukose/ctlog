@@ -15,7 +15,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -81,13 +80,12 @@ var outputCount int64 = 0
 var inputCount int64 = 0
 var db *sql.DB
 var startTime time.Time
-var dbMut sync.Mutex
 
 const INSERT_BUFFER_SIZE = 10000
 const FILE_LIMIT = 10240
 const DOWNLOADER_COUNT = 20
-const DOWNLOAD_BUFFER_SIZE = 50
-const PARSE_BUFFER_SIZE = 2
+const DOWNLOAD_BUFFER_SIZE = DOWNLOADER_COUNT * BATCH_SIZE
+const PARSE_BUFFER_SIZE = 1000
 const BATCH_SIZE = 10
 
 func usage() {
@@ -135,26 +133,26 @@ func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error){
 	return &resultMap, err
 }
 
+// Removes items from the inserter channel and inserts them into the database
+// Duplicates from multiple logs get ignored
+//TODO: insert in batches
 func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
+	//build query
 	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?)")
 	defer q.Close()
-	//count := 0
+	count := 0
 	for name := range o {
-		//TODO: mutex possibly redundant
-		//dbMut.Lock()
 		_, err := q.Exec(name.CN, name.DN, name.SerialNumber)
 		if err != nil {
 			log.Printf("Failed saving cert with CN: %s\nDN: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.SerialNumber, err)
 		}
-		//dbMut.Unlock()
 		atomic.AddInt64(&outputCount, 1)
 
-		//count++
-		//if count == 1000 {
-		//	end := time.Now()
-		//	println("O", end.Sub(startTime).String())
-		//	count = 0
-		//}
+		count++
+		if count % 1000 == 0 {
+			end := time.Now()
+			println("O", end.Sub(startTime).String(), count / 1000)
+		}
 	}
 	Wo.Done()
 }
@@ -165,11 +163,11 @@ func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 	//count := 0
 	defer Wp.Done()
-	for entry := range c {
+	for e := range c {
 		var leaf ct.MerkleTreeLeaf
 
-		if rest, err := ct_tls.Unmarshal(entry.LeafInput, &leaf); err != nil {
-			log.Printf("[-] Failed to unmarshal MerkleTreeLeaf: %v (%v)", err, entry)
+		if rest, err := ct_tls.Unmarshal(e.LeafInput, &leaf); err != nil {
+			log.Printf("[-] Failed to unmarshal MerkleTreeLeaf: %v (%v)", err, e)
 			continue
 		} else if len(rest) > 0 {
 			log.Printf("[-] Trailing data (%d bytes) after MerkleTreeLeaf: %q", len(rest), rest)
@@ -195,7 +193,7 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			}
 
 		default:
-			log.Printf("[-] Unknown entry type: %v (%v)", leaf.TimestampedEntry.EntryType, entry)
+			log.Printf("[-] Unknown entry type: %v (%v)", leaf.TimestampedEntry.EntryType, e)
 			continue
 		}
 
@@ -251,7 +249,9 @@ func main() {
 	defer sqldb.CloseConnection(db)
 	sqldb.CleanupDownloadTable(db)
 
+	// FOR TESTING PURPOSES
 	//downloadAndUpdateHeads(db)
+
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
 	// Distinguish between single and all log check
@@ -295,10 +295,12 @@ func main() {
 
 
 	// Launch one input parser per core
-	for i := 0; i < runtime.NumCPU(); i++ {
+	PARSER_COUNT := runtime.NumCPU()
+	println("LAUNCHING PARSERS, COUNT", PARSER_COUNT)
+	for i := 0; i < PARSER_COUNT; i++ {
 		go parser(i, c_parse, c_insert, db)
 	}
-	Wp.Add(runtime.NumCPU())
+	Wp.Add(PARSER_COUNT)
 
 	// Launch downloaders, not sure about the number
 	for i:= 0; i < DOWNLOADER_COUNT; i++ {
@@ -323,7 +325,7 @@ func main() {
 	// Wait for generators
 	Wg.Wait()
 
- 	// Close to-download channel
+ 	// Everything generated, close to-download channel
  	close(c_down)
 
  	// Wait for downloaders
@@ -332,7 +334,7 @@ func main() {
 	log.Println("FINISHED DOWNLOADING")
 	log.Println("Download duration = ", downloadEndTime.Sub(startTime))
 
- 	// Close to-parse channel
+ 	// Everything downloaded, close to-parse channel
 	close(c_parse)
 
  	// Wait for parsers
@@ -341,7 +343,7 @@ func main() {
 	log.Println("FINISHED PARSING")
 
 
- 	// Close to-insert channel
+ 	// Everything parsed, close to-insert channel
  	close(c_insert)
 
  	// Wait for the inserter

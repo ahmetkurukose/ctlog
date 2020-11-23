@@ -5,6 +5,7 @@
 *.so
 *.dylib
 
+certdb.sqlite
 console.log
 bench.prof
 

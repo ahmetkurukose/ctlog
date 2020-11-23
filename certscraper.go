@@ -47,6 +47,7 @@ type CTHead struct {
 }
 
 // Downloads the entries as JSON.
+//TODO: create only one transport and one client
 func downloadJSON(url string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -146,15 +147,20 @@ func BatchDownloader(c_down <-chan string, c_parse chan<- CTEntry) {
 		attempts := 0
 		for err != nil {
 			time.Sleep(time.Duration(RETRY_WAIT * attempts) * time.Second)
-			//log.Printf("[-] (%d) Failed to download entries for %s: index %d -> %s\n", attempts, logurl, index, err)
+			log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
 			entries, err = DownloadEntries(url)
 			attempts++
 			if attempts >= 10 {
 				log.Printf("[-] Failed to download entries for %s -> %s\n", url, err)
 			}
 		}
-		for entryIndex := range entries.Entries {
-			c_parse <- entries.Entries[entryIndex]
+
+		for i := range entries.Entries {
+			c_parse <- entries.Entries[i]
 		}
+
+		// Throttle download speed
+		// TODO: optimize this, so far 1 second worked the best
+		time.Sleep(time.Duration(1) * time.Second)
 	}
 }
