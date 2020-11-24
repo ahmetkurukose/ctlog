@@ -76,14 +76,20 @@ var CTLogs = []string{
 	//"https://mammoth.ct.comodo.com/",
 }
 
+// BEST RESULTS SO FAR
+//const INSERT_BUFFER_SIZE = 10000
+//const DOWNLOADER_COUNT = 80
+//const PARSE_BUFFER_SIZE = 1000
+// THROUGHPUT 300k/10m, no visible throttling from log
+
+
 var outputCount int64 = 0
 var inputCount int64 = 0
 var db *sql.DB
 var startTime time.Time
 
 const INSERT_BUFFER_SIZE = 10000
-const FILE_LIMIT = 10240
-const DOWNLOADER_COUNT = 20
+const DOWNLOADER_COUNT = 90
 const DOWNLOAD_BUFFER_SIZE = DOWNLOADER_COUNT * BATCH_SIZE
 const PARSE_BUFFER_SIZE = 1000
 const BATCH_SIZE = 10
@@ -248,6 +254,9 @@ func main() {
 	db = sqldb.ConnectToDatabase()
 	defer sqldb.CloseConnection(db)
 	sqldb.CleanupDownloadTable(db)
+
+	// Create http client
+	CreateClient()
 
 	// FOR TESTING PURPOSES
 	//downloadAndUpdateHeads(db)

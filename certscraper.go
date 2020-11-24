@@ -19,6 +19,8 @@ var Wp sync.WaitGroup
 var Wo sync.WaitGroup
 var Wg sync.WaitGroup
 
+var httpClient *http.Client
+
 type CTBatchData struct {
 	Url string
 	StartIndex int64
@@ -56,13 +58,7 @@ func downloadJSON(url string) ([]byte, error) {
 
 	req.Header.Set("Accept", "application/json")
 
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-
-	client := &http.Client{Transport: tr}
-
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -163,4 +159,12 @@ func BatchDownloader(c_down <-chan string, c_parse chan<- CTEntry) {
 		// TODO: optimize this, so far 1 second worked the best
 		time.Sleep(time.Duration(1) * time.Second)
 	}
+}
+
+func CreateClient() {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	httpClient = &http.Client{Transport: tr}
 }
