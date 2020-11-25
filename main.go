@@ -78,9 +78,9 @@ var CTLogs = []string{
 
 // BEST RESULTS SO FAR
 //const INSERT_BUFFER_SIZE = 10000
-//const DOWNLOADER_COUNT = 80
+//const DOWNLOADER_COUNT = 90
 //const PARSE_BUFFER_SIZE = 1000
-// THROUGHPUT 300k/10m, no visible throttling from log
+// THROUGHPUT 350k/10min, no visible throttling from log
 
 
 var outputCount int64 = 0
@@ -93,6 +93,7 @@ const DOWNLOADER_COUNT = 90
 const DOWNLOAD_BUFFER_SIZE = DOWNLOADER_COUNT * BATCH_SIZE
 const PARSE_BUFFER_SIZE = 1000
 const BATCH_SIZE = 10
+const PARSER_COUNT = 4
 
 func usage() {
 	fmt.Println("Usage: " + os.Args[0] + " [options]")
@@ -103,6 +104,7 @@ func usage() {
 	flag.PrintDefaults()
 }
 
+//FOR TESTING PURPOSES
 func downloadAndUpdateHeads(db *sql.DB) {
 	for l := range CTLogs {
 		head, err := DownloadSTH(CTLogs[l])
@@ -114,7 +116,7 @@ func downloadAndUpdateHeads(db *sql.DB) {
 }
 
 
-//THE GOOD ONE
+// Downloads the new STHs from the logs, returns a map of log url -> old and new index
 func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error){
 	resultMap := make(map[string]sqldb.CTLogInfo)
 	rows, err := db.Query("SELECT url, lastIndex FROM CTLog")
@@ -141,16 +143,15 @@ func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error){
 
 // Removes items from the inserter channel and inserts them into the database
 // Duplicates from multiple logs get ignored
-//TODO: insert in batches
+// TODO: Maybe insert in batches?
 func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
-	//build query
-	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?)")
+	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?, ?)")
 	defer q.Close()
 	count := 0
 	for name := range o {
-		_, err := q.Exec(name.CN, name.DN, name.SerialNumber)
+		_, err := q.Exec(name.CN, name.DN, name.SerialNumber, name.DNS)
 		if err != nil {
-			log.Printf("Failed saving cert with CN: %s\nDN: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.SerialNumber, err)
+			log.Printf("Failed saving cert with CN: %s\nDN: %s\nDNS: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.DNS, name.SerialNumber, err)
 		}
 		atomic.AddInt64(&outputCount, 1)
 
@@ -214,6 +215,8 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			}
 		}
 
+
+
 		// Valid input
 		atomic.AddInt64(&inputCount, 1)
 
@@ -221,6 +224,7 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			CN:           cert.Subject.CommonName,
 			DN:           cert.Subject.String(),
 			SerialNumber: cert.SerialNumber.String(),
+			DNS:		  strings.Join(cert.DNSNames, " "),
 		}
 
 		//count++
@@ -286,7 +290,7 @@ func main() {
 	var all int64 = 0
 	for u, i := range *logInfos {
 		all += i.NewHeadIndex - i.OldHeadIndex
-		fmt.Printf("%sct/v1/get-entries?start=%d&end=%d     %d\n", u, i.OldHeadIndex, i.NewHeadIndex - 1, i.NewHeadIndex - i.OldHeadIndex)
+		fmt.Printf("%sct/v1/get-entries?start=%d&end=%d      %d\n", u, i.OldHeadIndex, i.NewHeadIndex - 1, i.NewHeadIndex - i.OldHeadIndex)
 	}
 	println("TO DOWNLOAD: ", all)
 
@@ -302,10 +306,7 @@ func main() {
 	// Inserting into database
 	c_insert := make(chan sqldb.CertInfo, INSERT_BUFFER_SIZE)
 
-
-	// Launch one input parser per core
-	PARSER_COUNT := runtime.NumCPU()
-	println("LAUNCHING PARSERS, COUNT", PARSER_COUNT)
+	// Launch parsers
 	for i := 0; i < PARSER_COUNT; i++ {
 		go parser(i, c_parse, c_insert, db)
 	}

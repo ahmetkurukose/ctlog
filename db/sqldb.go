@@ -12,6 +12,7 @@ type CertInfo struct {
 	CN string
 	DN string
 	SerialNumber string
+	DNS string
 }
 
 type CTLogInfo struct {
@@ -82,13 +83,14 @@ func IsDomainMonitored(names map[string]struct{}, db *sql.DB) (bool, error) {
 	}
 }
 
+// Find monitored certificates, create a map of email -> certificate attributes and send out emails
 func ParseDownloadedCertificates(db *sql.DB) {
-	println("PARSING")
-
+	//TODO: possibly trim ends? For example cesnet.cz -> cesnet, to check cesnet.us
 	query := `
-		SELECT email, CN, DN, serialnumber
+		SELECT email, CN, DN, serialnumber, DNS
 		FROM Downloaded
-		INNER JOIN Monitor M ON INSTR(CN, M.domain) > 0;`
+		INNER JOIN Monitor M ON INSTR(DN, M.domain) > 0 OR
+		                        INSTR(DNS, M.domain) > 0;`
 
 	rows, err := db.Query(query)
 	if err != nil {
@@ -104,14 +106,15 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			CN           string
 			DN           string
 			serialnumber string
+			DNS			 string
 		)
 
-		rows.Scan(&email, &CN, &DN, &serialnumber)
+		rows.Scan(&email, &CN, &DN, &serialnumber, &DNS)
 		if val, ok := certsForEmail[email]; ok {
-			val.PushBack(CertInfo{CN, DN, serialnumber})
+			val.PushBack(CertInfo{CN, DN, serialnumber,DNS})
 		} else {
 			certsForEmail[email] = list.New()
-			certsForEmail[email].PushBack(CertInfo{CN, DN, serialnumber})
+			certsForEmail[email].PushBack(CertInfo{CN, DN, serialnumber, DNS})
 		}
 	}
 
@@ -120,7 +123,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 		SendEmail(email, certList)
 		for e := certList.Front(); e != nil; e = e.Next() {
 			cert := e.Value.(CertInfo)
-			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber)
+			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber, cert.DNS)
 		}
 	}
 

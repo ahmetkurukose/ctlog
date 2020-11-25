@@ -51,7 +51,11 @@
       <DataType>text|0s</DataType>
       <NotNull>1</NotNull>
     </column>
-    <index id="18" parent="7" name="sqlite_autoindex_Certificate_1">
+    <column id="18" parent="7" name="DNS">
+      <Position>4</Position>
+      <DataType>text|0s</DataType>
+    </column>
+    <index id="19" parent="7" name="sqlite_autoindex_Certificate_1">
       <NameSurrogate>1</NameSurrogate>
       <ColNames>CN
 DN
@@ -59,28 +63,32 @@ serialnumber</ColNames>
       <ColumnCollations></ColumnCollations>
       <Unique>1</Unique>
     </index>
-    <key id="19" parent="7" name="Certificate_pk">
+    <key id="20" parent="7" name="Certificate_pk">
       <ColNames>CN
 DN
 serialnumber</ColNames>
       <Primary>1</Primary>
       <UnderlyingIndexName>sqlite_autoindex_Certificate_1</UnderlyingIndexName>
     </key>
-    <column id="20" parent="8" name="CN">
+    <column id="21" parent="8" name="CN">
       <Position>1</Position>
       <DataType>text|0s</DataType>
       <NotNull>1</NotNull>
     </column>
-    <column id="21" parent="8" name="DN">
+    <column id="22" parent="8" name="DN">
       <Position>2</Position>
       <DataType>text|0s</DataType>
       <NotNull>1</NotNull>
     </column>
-    <column id="22" parent="8" name="serialnumber">
+    <column id="23" parent="8" name="serialnumber">
       <Position>3</Position>
       <DataType>text|0s</DataType>
     </column>
-    <index id="23" parent="8" name="sqlite_autoindex_Downloaded_1">
+    <column id="24" parent="8" name="DNS">
+      <Position>4</Position>
+      <DataType>text|0s</DataType>
+    </column>
+    <index id="25" parent="8" name="sqlite_autoindex_Downloaded_1">
       <NameSurrogate>1</NameSurrogate>
       <ColNames>CN
 DN
@@ -88,51 +96,51 @@ serialnumber</ColNames>
       <ColumnCollations></ColumnCollations>
       <Unique>1</Unique>
     </index>
-    <key id="24" parent="8" name="Downloaded_pk">
+    <key id="26" parent="8" name="Downloaded_pk">
       <ColNames>CN
 DN
 serialnumber</ColNames>
       <Primary>1</Primary>
       <UnderlyingIndexName>sqlite_autoindex_Downloaded_1</UnderlyingIndexName>
     </key>
-    <column id="25" parent="9" name="email">
+    <column id="27" parent="9" name="email">
       <Position>1</Position>
       <DataType>text|0s</DataType>
     </column>
-    <column id="26" parent="9" name="domain">
+    <column id="28" parent="9" name="domain">
       <Position>2</Position>
       <DataType>text|0s</DataType>
     </column>
-    <index id="27" parent="9" name="sqlite_autoindex_Monitor_1">
+    <index id="29" parent="9" name="sqlite_autoindex_Monitor_1">
       <NameSurrogate>1</NameSurrogate>
       <ColNames>email
 domain</ColNames>
       <ColumnCollations></ColumnCollations>
       <Unique>1</Unique>
     </index>
-    <key id="28" parent="9" name="Monitor_pk">
+    <key id="30" parent="9" name="Monitor_pk">
       <ColNames>email
 domain</ColNames>
       <Primary>1</Primary>
       <UnderlyingIndexName>sqlite_autoindex_Monitor_1</UnderlyingIndexName>
     </key>
-    <column id="29" parent="10" name="type">
+    <column id="31" parent="10" name="type">
       <Position>1</Position>
       <DataType>text|0s</DataType>
     </column>
-    <column id="30" parent="10" name="name">
+    <column id="32" parent="10" name="name">
       <Position>2</Position>
       <DataType>text|0s</DataType>
     </column>
-    <column id="31" parent="10" name="tbl_name">
+    <column id="33" parent="10" name="tbl_name">
       <Position>3</Position>
       <DataType>text|0s</DataType>
     </column>
-    <column id="32" parent="10" name="rootpage">
+    <column id="34" parent="10" name="rootpage">
       <Position>4</Position>
       <DataType>int|0s</DataType>
     </column>
-    <column id="33" parent="10" name="sql">
+    <column id="35" parent="10" name="sql">
       <Position>5</Position>
       <DataType>text|0s</DataType>
     </column>
