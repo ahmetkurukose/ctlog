@@ -169,7 +169,8 @@ func CreateClient() {
 }
 
 
-
+// Download entries and send them to the parsers
+// Download in the maximal batch sizes
 func newDownloadEntries(start int64, end int64, logurl string, c_parse chan<- CTEntry) {
 	defer Wd.Done()
 	cur := start
@@ -199,7 +200,7 @@ func newDownloadEntries(start int64, end int64, logurl string, c_parse chan<- CT
 	}
 }
 
-// Launch for each log
+// Launch for each log, split the log into chunks, launch goroutine for each chunk
 func distributeWork(oldHeadSize int64, newHeadSize int64, downloaderCount int, logurl string, c_parse chan<- CTEntry) {
 	defer Wg.Done()
 

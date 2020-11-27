@@ -76,20 +76,13 @@ var CTLogs = []string{
 	//"https://mammoth.ct.comodo.com/",
 }
 
-// BEST RESULTS SO FAR
-//const INSERT_BUFFER_SIZE = 10000
-//const DOWNLOADER_COUNT = 90
-//const PARSE_BUFFER_SIZE = 1000
-// THROUGHPUT 350k/10min, no visible throttling from log
-
-
 var outputCount int64 = 0
 var inputCount int64 = 0
 var db *sql.DB
 var startTime time.Time
 
 const INSERT_BUFFER_SIZE = 10000
-const DOWNLOADER_COUNT = 90
+const DOWNLOADER_COUNT = 75
 const DOWNLOAD_BUFFER_SIZE = DOWNLOADER_COUNT * BATCH_SIZE
 const PARSE_BUFFER_SIZE = 1000
 const BATCH_SIZE = 10
@@ -239,7 +232,8 @@ func main() {
 
 	flag.Usage = func() { usage() }
 	logurl := flag.String("logurl", "", "Only read from the specified CT log url")
-	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
+	cpuprofile := flag.String("cpuprofile", "", "Write cpu profile to file")
+	database := flag.String("db", "", "REQUIRED, path to database")
 
 	flag.Parse()
 
@@ -254,8 +248,11 @@ func main() {
 	}
 	//-------------------------
 
+	if *database == "" {
+		log.Fatal("[-] No database")
+	}
 
-	db = sqldb.ConnectToDatabase()
+	db = sqldb.ConnectToDatabase(*database)
 	defer sqldb.CloseConnection(db)
 	sqldb.CleanupDownloadTable(db)
 
@@ -263,7 +260,7 @@ func main() {
 	CreateClient()
 
 	// FOR TESTING PURPOSES
-	downloadAndUpdateHeads(db)
+	//downloadAndUpdateHeads(db)
 
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
@@ -327,12 +324,12 @@ func main() {
 
 	// Start queueing downloads for each log
  	for url, headInfo := range *logInfos {
- 		//go BatchGenerator(c_down, url, headInfo.OldHeadIndex, headInfo.NewHeadIndex, db, BATCH_SIZE)
-		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, 25, url, c_parse)
+ 		//go BatchGenerator(c_down, url, headInfo.OldHeadIndex, headInfo.NewHeadIndex, db, 10)
+ 		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, DOWNLOADER_COUNT, url, c_parse)
  		Wg.Add(1)
 	}
 
-	// Wait for generators
+	// Wait for work distributors
 	Wg.Wait()
 
  	// Everything generated, close to-download channel

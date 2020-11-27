@@ -22,8 +22,8 @@ type CTLogInfo struct {
 
 
 // Creates a connection to the database and returns it
-func ConnectToDatabase() *sql.DB {
-	db, err := sql.Open("sqlite3", "./db/certdb.sqlite")
+func ConnectToDatabase(database string) *sql.DB {
+	db, err := sql.Open("sqlite3", database)
 	if err != nil {
 		log.Fatal(err)
 	}
