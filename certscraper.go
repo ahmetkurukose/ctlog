@@ -49,7 +49,6 @@ type CTHead struct {
 }
 
 // Downloads the entries as JSON.
-//TODO: create only one transport and one client
 func downloadJSON(url string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -167,4 +166,56 @@ func CreateClient() {
 	}
 
 	httpClient = &http.Client{Transport: tr}
+}
+
+
+
+func newDownloadEntries(start int64, end int64, logurl string, c_parse chan<- CTEntry) {
+	defer Wd.Done()
+	cur := start
+	const RETRY_WAIT = 1
+	for cur < end {
+		url := fmt.Sprintf("%sct/v1/get-entries?start=%d&end=%d", logurl, cur, end)
+		entries, err := DownloadEntries(url)
+
+		attempts := 0
+		for err != nil {
+			time.Sleep(time.Duration(RETRY_WAIT * attempts) * time.Second)
+			log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
+			entries, err = DownloadEntries(url)
+			attempts++
+			if attempts >= 10 {
+				log.Printf("[-] Failed to download entries for %s -> %s\n", url, err)
+			}
+		}
+
+		cur += int64(len(entries.Entries))
+
+		for i := range entries.Entries {
+			c_parse <- entries.Entries[i]
+		}
+
+		time.Sleep(time.Duration(1) * time.Second)
+	}
+}
+
+// Launch for each log
+func distributeWork(oldHeadSize int64, newHeadSize int64, downloaderCount int, logurl string, c_parse chan<- CTEntry) {
+	defer Wg.Done()
+
+	chunkSize := (newHeadSize - oldHeadSize) / int64(downloaderCount)
+
+	for start := oldHeadSize; start < newHeadSize; start += chunkSize {
+		end := start + chunkSize - 1
+		if end >= newHeadSize {
+			end = newHeadSize
+		}
+
+		if start > end {
+			return
+		}
+
+		go newDownloadEntries(start, end, logurl, c_parse)
+		Wd.Add(1)
+	}
 }

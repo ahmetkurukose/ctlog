@@ -263,7 +263,7 @@ func main() {
 	CreateClient()
 
 	// FOR TESTING PURPOSES
-	//downloadAndUpdateHeads(db)
+	downloadAndUpdateHeads(db)
 
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
@@ -298,7 +298,7 @@ func main() {
 	// Create channels
 
 	// Downloading
-	c_down := make(chan string, DOWNLOAD_BUFFER_SIZE)
+	//c_down := make(chan string, DOWNLOAD_BUFFER_SIZE)
 
 	// Parsing
 	c_parse := make(chan CTEntry, PARSE_BUFFER_SIZE)
@@ -313,10 +313,10 @@ func main() {
 	Wp.Add(PARSER_COUNT)
 
 	// Launch downloaders, not sure about the number
-	for i:= 0; i < DOWNLOADER_COUNT; i++ {
-		go BatchDownloader(c_down, c_parse)
-	}
-	Wd.Add(DOWNLOADER_COUNT)
+	//for i:= 0; i < DOWNLOADER_COUNT; i++ {
+	//	go BatchDownloader(c_down, c_parse)
+	//}
+	//Wd.Add(DOWNLOADER_COUNT)
 
 	// Launch a single output writer
 	go inserter(c_insert, db)
@@ -326,17 +326,17 @@ func main() {
 	startTime = time.Now()
 
 	// Start queueing downloads for each log
-	// TODO: optimize batch size
  	for url, headInfo := range *logInfos {
- 		go BatchGenerator(c_down, url, headInfo.OldHeadIndex, headInfo.NewHeadIndex, db, BATCH_SIZE)
-		Wg.Add(1)
+ 		//go BatchGenerator(c_down, url, headInfo.OldHeadIndex, headInfo.NewHeadIndex, db, BATCH_SIZE)
+		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, 25, url, c_parse)
+ 		Wg.Add(1)
 	}
 
 	// Wait for generators
 	Wg.Wait()
 
  	// Everything generated, close to-download channel
- 	close(c_down)
+ 	//close(c_down)
 
  	// Wait for downloaders
  	Wd.Wait()
