@@ -263,7 +263,7 @@ func main() {
 	CreateClient()
 
 	// FOR TESTING PURPOSES
-	downloadAndUpdateHeads(db)
+	//downloadAndUpdateHeads(db)
 
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
@@ -328,7 +328,7 @@ func main() {
 	// Start queueing downloads for each log
  	for url, headInfo := range *logInfos {
  		//go BatchGenerator(c_down, url, headInfo.OldHeadIndex, headInfo.NewHeadIndex, db, BATCH_SIZE)
-		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, 25, url, c_parse)
+		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, 50, url, c_parse)
  		Wg.Add(1)
 	}
 
