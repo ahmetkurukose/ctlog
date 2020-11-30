@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log"
 	"strings"
+    "gopkg.in/gomail.v2"
+	"time"
+	"strconv"
 )
 
 type CertInfo struct {
@@ -40,7 +43,31 @@ func CleanupDownloadTable(db *sql.DB) {
 }
 
 func SendEmail(email string, certList *list.List) {
+	t := time.Now()
+	date := strings.Join([]string{strconv.Itoa(t.Day()), strconv.Itoa(int(t.Month())), strconv.Itoa(t.Year())}, ".")
+	m := gomail.NewMessage()
+	m.SetHeader("From", "ctlog@cesnet.cz")
+	m.SetHeader("To", email)
+	m.SetHeader("Subject", "New certificates " + date)
 
+	certificates := ""
+	for cert := certList.Front(); cert != nil; cert = cert.Next() {
+		cur := cert.Value.(CertInfo)
+		certificates += strings.Join([]string{cur.CN, cur.DN, cur.DNS, cur.SerialNumber},"\n")
+	}
+
+	//TESTING
+	println(email, certificates)
+
+	//
+	//m.SetBody("text/html", "")
+	//
+	//d := gomail.NewDialer("ctlog@", 587, "user", "123456")
+	//
+	//// Send the email to Bob, Cora and Dan.
+	//if err := d.DialAndSend(m); err != nil {
+	//	log.Printf("[-] Failed sending email, %s\n", err)
+	//}
 }
 
 // Returns previous head index of a log
