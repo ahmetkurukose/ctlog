@@ -154,6 +154,7 @@ func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 			println("O", end.Sub(startTime).String(), count / 1000)
 		}
 	}
+	log.Printf("TOTAL INSERTED %d\n", count)
 	Wo.Done()
 }
 

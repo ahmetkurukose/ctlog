@@ -22,9 +22,8 @@
     <select />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="88e81ae5-71a7-4f53-9f8f-e40c40e88790" name="Default Changelist" comment="Database as an argument, some cleanup">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/sqldb.go" beforeDir="false" afterPath="$PROJECT_DIR$/db/sqldb.go" afterDir="false" />
+    <list default="true" id="88e81ae5-71a7-4f53-9f8f-e40c40e88790" name="Default Changelist" comment="Testing email creation">
+      <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
     </list>
     <list id="34832ab2-7b1a-4258-9ba0-c10829bdf984" name="Database as an argument, some cleanup" comment="">
       <change beforePath="$PROJECT_DIR$/db/certdb.sqlite" beforeDir="false" afterPath="$PROJECT_DIR$/db/certdb.sqlite" afterDir="false" />
@@ -143,7 +142,8 @@
     <MESSAGE value="Changed the way downloads are made, should be a lot more efficient, will optimize the downloader counts" />
     <MESSAGE value="Adjusting downloader count" />
     <MESSAGE value="Database as an argument, some cleanup" />
-    <option name="LAST_COMMIT_MESSAGE" value="Database as an argument, some cleanup" />
+    <MESSAGE value="Testing email creation" />
+    <option name="LAST_COMMIT_MESSAGE" value="Testing email creation" />
   </component>
   <component name="WindowStateProjectService">
     <state x="542" y="127" key="#GOPATH" timestamp="1603270691851">
@@ -300,7 +300,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" type="DlvLineBreakpoint">
           <url>file://$PROJECT_DIR$/main.go</url>
-          <line>254</line>
+          <line>255</line>
           <option name="timeStamp" value="3" />
         </line-breakpoint>
       </breakpoints>
