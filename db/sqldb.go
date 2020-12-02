@@ -3,7 +3,6 @@ package sqldb
 import (
 	"container/list"
 	"database/sql"
-	"fmt"
 	"log"
 	"strings"
     "gopkg.in/gomail.v2"
@@ -24,7 +23,7 @@ type CTLogInfo struct {
 }
 
 
-// Creates a connection to the database and returns it
+// Creates a connection to the database and returns it.
 func ConnectToDatabase(database string) *sql.DB {
 	db, err := sql.Open("sqlite3", database)
 	if err != nil {
@@ -33,15 +32,17 @@ func ConnectToDatabase(database string) *sql.DB {
 	return db
 }
 
-// Closes the database connection
+// Closes the database connection.
 func CloseConnection(db *sql.DB) {
 	db.Close()
 }
 
+// Deletes the downloaded certificates.
 func CleanupDownloadTable(db *sql.DB) {
 	db.Exec("DELETE FROM Downloaded")
 }
 
+// Send out the certificate informations to the email monitoring them.
 func SendEmail(email string, certList *list.List) {
 	t := time.Now()
 	date := strings.Join([]string{strconv.Itoa(t.Day()), strconv.Itoa(int(t.Month())), strconv.Itoa(t.Year())}, ".")
@@ -57,7 +58,8 @@ func SendEmail(email string, certList *list.List) {
 	}
 
 	//TESTING
-	println(email, certificates)
+	println(email)
+	println(certificates)
 
 	//
 	//m.SetBody("text/html", "")
@@ -70,7 +72,7 @@ func SendEmail(email string, certList *list.List) {
 	//}
 }
 
-// Returns previous head index of a log
+// Returns previous head index of a log.
 func GetLogIndex(url string, db *sql.DB) (int64, error) {
 	row := db.QueryRow("SELECT lastIndex FROM CTLog WHERE url = ?", url)
 	var lastIndex int64
@@ -79,36 +81,6 @@ func GetLogIndex(url string, db *sql.DB) (int64, error) {
 	return lastIndex, err
 }
 
-// Efficiently builds SQL query for IsDomainMonitored
-func buildIsDomainMonitored(names map[string]struct{}) string {
-	var builder strings.Builder
-
-	fmt.Fprintf(&builder,"SELECT COUNT(DISTINCT domain) FROM Monitor WHERE")
-	for name := range names {
-		fmt.Fprintf(&builder, " domain = \"%s\" OR", name)
-	}
-	s := builder.String()
-	return s[:builder.Len()-2]
-}
-
-// Checks if domain is being monitored
-func IsDomainMonitored(names map[string]struct{}, db *sql.DB) (bool, error) {
-	q := buildIsDomainMonitored(names)
-	row := db.QueryRow(q)
-
-	var result int64
-	err := row.Scan(&result)
-	if err != nil {
-		log.Printf("[-] Error while fetching domain being monitored -> %s\n", err)
-		return false, err
-	}
-
-	if result == 0 {
-		return false, err
-	} else {
-		return true, err
-	}
-}
 
 // Find monitored certificates, create a map of email -> certificate attributes and send out emails
 func ParseDownloadedCertificates(db *sql.DB) {

@@ -45,35 +45,23 @@ var CTLogs = []string{
 	"https://oak.ct.letsencrypt.org/2021/",
 	"https://oak.ct.letsencrypt.org/2022/",
 	"https://oak.ct.letsencrypt.org/2023/",
-	//"https://ct.cloudflare.com/logs/nimbus2019/",
-	//"https://ct.cloudflare.com/logs/nimbus2020/",
-	//"https://ct.cloudflare.com/logs/nimbus2021/",
-	//"https://ct.cloudflare.com/logs/nimbus2022/",
-	//"https://ct.cloudflare.com/logs/nimbus2023/",
+	"https://ct.cloudflare.com/logs/nimbus2019/",
+	"https://ct.cloudflare.com/logs/nimbus2020/",
+	"https://ct.cloudflare.com/logs/nimbus2021/",
+	"https://ct.cloudflare.com/logs/nimbus2022/",
+	"https://ct.cloudflare.com/logs/nimbus2023/",
 	//"https://ct1.digicert-ct.com/log/",
-	//"https://ct2.digicert-ct.com/log/",
-	//"https://yeti2019.ct.digicert.com/log/",
 	//"https://yeti2020.ct.digicert.com/log/",
 	//"https://yeti2021.ct.digicert.com/log/",
 	//"https://yeti2022.ct.digicert.com/log/",
 	//"https://yeti2023.ct.digicert.com/log/",
-	//"https://nessie2019.ct.digicert.com/log/",
 	//"https://nessie2020.ct.digicert.com/log/",
 	//"https://nessie2021.ct.digicert.com/log/",
 	//"https://nessie2022.ct.digicert.com/log/",
 	//"https://nessie2023.ct.digicert.com/log/",
-	//"https://ct.ws.symantec.com/",
-	//"https://vega.ws.symantec.com/",
-	//"https://sirius.ws.symantec.com/",
-	//"https://log.certly.io/",
-	//"https://ct.izenpe.com/",
-	//"https://ctlog.wosign.com/",
-	//"https://ctlog.api.venafi.com/",
-	//"https://ctlog-gen2.api.venafi.com/",
-	//"https://ctserver.cnnic.cn/",
-	//"https://ct.startssl.com/",
-	//"https://sabre.ct.comodo.com/",
-	//"https://mammoth.ct.comodo.com/",
+	"https://ctserver.cnnic.cn/",
+	"https://sabre.ct.comodo.com/",
+	"https://mammoth.ct.comodo.com/",
 }
 
 var outputCount int64 = 0
@@ -97,7 +85,8 @@ func usage() {
 	flag.PrintDefaults()
 }
 
-//FOR TESTING PURPOSES
+// For testing purposes.
+// Downloads and updates the database with new heads, used for reseting.
 func downloadAndUpdateHeads(db *sql.DB) {
 	for l := range CTLogs {
 		head, err := DownloadSTH(CTLogs[l])
@@ -107,7 +96,6 @@ func downloadAndUpdateHeads(db *sql.DB) {
 		db.Exec("UPDATE CTLog SET lastIndex = ? WHERE url = ?", head.TreeSize, CTLogs[l])
 	}
 }
-
 
 // Downloads the new STHs from the logs, returns a map of log url -> old and new index
 func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error){
@@ -136,7 +124,6 @@ func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error){
 
 // Removes items from the inserter channel and inserts them into the database
 // Duplicates from multiple logs get ignored
-// TODO: Maybe insert in batches?
 func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?, ?)")
 	defer q.Close()
@@ -149,11 +136,13 @@ func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 		atomic.AddInt64(&outputCount, 1)
 
 		count++
-		if count % 1000 == 0 {
+		if count % 1000000 == 0 {
 			end := time.Now()
-			println("O", end.Sub(startTime).String(), count / 1000)
+			println("O", end.Sub(startTime).String(), count / 1000000)
 		}
 	}
+
+	//TODO: of by one on all logs?
 	log.Printf("TOTAL INSERTED %d\n", count)
 	Wo.Done()
 }
@@ -162,7 +151,6 @@ func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 // Takes out and parses Merkle tree leaf into a certificate info struct
 // Sends the result into the database inserter
 func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
-	//count := 0
 	defer Wp.Done()
 	for e := range c {
 		var leaf ct.MerkleTreeLeaf
@@ -210,7 +198,6 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 		}
 
 
-
 		// Valid input
 		atomic.AddInt64(&inputCount, 1)
 
@@ -220,9 +207,6 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			SerialNumber: cert.SerialNumber.String(),
 			DNS:		  strings.Join(cert.DNSNames, " "),
 		}
-
-		//count++
-		//println(count)
 	}
 }
 
@@ -261,12 +245,12 @@ func main() {
 	CreateClient()
 
 	// FOR TESTING PURPOSES
-	//downloadAndUpdateHeads(db)
+	downloadAndUpdateHeads(db)
 
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
+
 	// Distinguish between single and all log check
-	// TODO: simplify this
 	if *logurl != "" {
 		index, err := sqldb.GetLogIndex(*logurl, db)
 		if err != nil {
@@ -277,7 +261,7 @@ func main() {
 			log.Fatal("[-] Error while fetching log, closing -> err", err)
 		}
 		*logInfos = make(map[string]sqldb.CTLogInfo)
-		(*logInfos)[*logurl] = sqldb.CTLogInfo{index, sth.TreeSize}
+		(*logInfos)[*logurl] = sqldb.CTLogInfo{index, sth.TreeSize - 1}
 	} else {
 		logInfos, err = downloadHeads(db)
 		if err != nil {
@@ -285,18 +269,16 @@ func main() {
 		}
 	}
 
+	// Print the amounts to download from each log and then the sum
 	var all int64 = 0
 	for u, i := range *logInfos {
 		all += i.NewHeadIndex - i.OldHeadIndex
-		fmt.Printf("%sct/v1/get-entries?start=%d&end=%d      %d\n", u, i.OldHeadIndex, i.NewHeadIndex - 1, i.NewHeadIndex - i.OldHeadIndex)
+		fmt.Printf("%sct/v1/get-entries?start=%d&end=%d      %d\n", u, i.OldHeadIndex, i.NewHeadIndex, i.NewHeadIndex - i.OldHeadIndex)
 	}
 	println("TO DOWNLOAD: ", all)
 
 
 	// Create channels
-
-	// Downloading
-	//c_down := make(chan string, DOWNLOAD_BUFFER_SIZE)
 
 	// Parsing
 	c_parse := make(chan CTEntry, PARSE_BUFFER_SIZE)
@@ -325,7 +307,6 @@ func main() {
 
 	// Start queueing downloads for each log
  	for url, headInfo := range *logInfos {
- 		//go BatchGenerator(c_down, url, headInfo.OldHeadIndex, headInfo.NewHeadIndex, db, 10)
  		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, DOWNLOADER_COUNT, url, c_parse)
  		Wg.Add(1)
 	}
@@ -347,7 +328,6 @@ func main() {
 
  	// Wait for parsers
  	Wp.Wait()
-	//parserEndTime := time.Now()
 	log.Println("FINISHED PARSING")
 
 
@@ -356,7 +336,6 @@ func main() {
 
  	// Wait for the inserter
  	Wo.Wait()
-	//insertEndTime := time.Now()
 
  	// Finished inserting, start working with the data
  	log.Println("FINISHED INSERTING")
