@@ -14,13 +14,14 @@ type CertInfo struct {
 	CN string
 	DN string
 	SerialNumber string
-	DNS string
+	SAN string
 }
 
 type CTLogInfo struct {
 	OldHeadIndex int64
 	NewHeadIndex int64
 }
+
 
 
 // Creates a connection to the database and returns it.
@@ -54,7 +55,7 @@ func SendEmail(email string, certList *list.List) {
 	certificates := ""
 	for cert := certList.Front(); cert != nil; cert = cert.Next() {
 		cur := cert.Value.(CertInfo)
-		certificates += strings.Join([]string{cur.CN, cur.DN, cur.DNS, cur.SerialNumber},"\n")
+		certificates += strings.Join([]string{cur.CN, cur.DN, cur.SAN, cur.SerialNumber},"\n")
 	}
 
 	//TESTING
@@ -74,7 +75,7 @@ func SendEmail(email string, certList *list.List) {
 
 // Returns previous head index of a log.
 func GetLogIndex(url string, db *sql.DB) (int64, error) {
-	row := db.QueryRow("SELECT lastIndex FROM CTLog WHERE url = ?", url)
+	row := db.QueryRow("SELECT HeadIndex FROM CTLog WHERE Url = ?", url)
 	var lastIndex int64
 	err := row.Scan(&lastIndex)
 
@@ -86,10 +87,10 @@ func GetLogIndex(url string, db *sql.DB) (int64, error) {
 func ParseDownloadedCertificates(db *sql.DB) {
 	//TODO: possibly trim ends? For example cesnet.cz -> cesnet, to check cesnet.us
 	query := `
-		SELECT email, CN, DN, serialnumber, DNS
+		SELECT Email, CN, DN, Serialnumber, SAN
 		FROM Downloaded
-		INNER JOIN Monitor M ON INSTR(DN, M.domain) > 0 OR
-		                        INSTR(DNS, M.domain) > 0;`
+		INNER JOIN Monitor M ON INSTR(DN, M.Domain) > 0 OR
+		                        INSTR(SAN, M.Domain) > 0;`
 
 	rows, err := db.Query(query)
 	if err != nil {
@@ -105,15 +106,15 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			CN           string
 			DN           string
 			serialnumber string
-			DNS			 string
+			SAN          string
 		)
 
-		rows.Scan(&email, &CN, &DN, &serialnumber, &DNS)
+		rows.Scan(&email, &CN, &DN, &serialnumber, &SAN)
 		if val, ok := certsForEmail[email]; ok {
-			val.PushBack(CertInfo{CN, DN, serialnumber,DNS})
+			val.PushBack(CertInfo{CN, DN, serialnumber, SAN})
 		} else {
 			certsForEmail[email] = list.New()
-			certsForEmail[email].PushBack(CertInfo{CN, DN, serialnumber, DNS})
+			certsForEmail[email].PushBack(CertInfo{CN, DN, serialnumber, SAN})
 		}
 	}
 
@@ -122,7 +123,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 		SendEmail(email, certList)
 		for e := certList.Front(); e != nil; e = e.Next() {
 			cert := e.Value.(CertInfo)
-			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber, cert.DNS)
+			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber, cert.SAN)
 		}
 	}
 

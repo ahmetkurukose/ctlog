@@ -50,15 +50,6 @@ var CTLogs = []string{
 	"https://ct.cloudflare.com/logs/nimbus2021/",
 	"https://ct.cloudflare.com/logs/nimbus2022/",
 	"https://ct.cloudflare.com/logs/nimbus2023/",
-	//"https://ct1.digicert-ct.com/log/",
-	//"https://yeti2020.ct.digicert.com/log/",
-	//"https://yeti2021.ct.digicert.com/log/",
-	//"https://yeti2022.ct.digicert.com/log/",
-	//"https://yeti2023.ct.digicert.com/log/",
-	//"https://nessie2020.ct.digicert.com/log/",
-	//"https://nessie2021.ct.digicert.com/log/",
-	//"https://nessie2022.ct.digicert.com/log/",
-	//"https://nessie2023.ct.digicert.com/log/",
 	"https://ctserver.cnnic.cn/",
 	"https://sabre.ct.comodo.com/",
 	"https://mammoth.ct.comodo.com/",
@@ -93,21 +84,21 @@ func downloadAndUpdateHeads(db *sql.DB) {
 		if err != nil {
 			log.Fatal("Failed downloading log")
 		}
-		db.Exec("UPDATE CTLog SET lastIndex = ? WHERE url = ?", head.TreeSize, CTLogs[l])
+		db.Exec("UPDATE CTLog SET HeadIndex = ? WHERE Url = ?", head.TreeSize - 1, CTLogs[l])
 	}
 }
 
 // Downloads the new STHs from the logs, returns a map of log url -> old and new index
 func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error){
 	resultMap := make(map[string]sqldb.CTLogInfo)
-	rows, err := db.Query("SELECT url, lastIndex FROM CTLog")
+	rows, err := db.Query("SELECT Url, HeadIndex FROM CTLog")
 	if err != nil {
 		log.Fatal("[-] Failed to query logurls from database -> ", err, "\n")
 	}
 	for rows.Next() {
 		var url string
-		var lastIndex int64
-		err = rows.Scan(&url, &lastIndex)
+		var headIndex int64
+		err = rows.Scan(&url, &headIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -116,7 +107,7 @@ func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error){
 		if err != nil {
 			return nil, err
 		}
-		resultMap[url] = sqldb.CTLogInfo{lastIndex, sth.TreeSize}
+		resultMap[url] = sqldb.CTLogInfo{headIndex, sth.TreeSize - 1}
 	}
 
 	return &resultMap, err
@@ -129,9 +120,9 @@ func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 	defer q.Close()
 	count := 0
 	for name := range o {
-		_, err := q.Exec(name.CN, name.DN, name.SerialNumber, name.DNS)
+		_, err := q.Exec(name.CN, name.DN, name.SerialNumber, name.SAN)
 		if err != nil {
-			log.Printf("Failed saving cert with CN: %s\nDN: %s\nDNS: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.DNS, name.SerialNumber, err)
+			log.Printf("Failed saving cert with CN: %s\nDN: %s\nDNS: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.SAN, name.SerialNumber, err)
 		}
 		atomic.AddInt64(&outputCount, 1)
 
@@ -205,7 +196,7 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			CN:           cert.Subject.CommonName,
 			DN:           cert.Subject.String(),
 			SerialNumber: cert.SerialNumber.String(),
-			DNS:		  strings.Join(cert.DNSNames, " "),
+			SAN:		  strings.Join(cert.DNSNames, " "),
 		}
 	}
 }
@@ -245,7 +236,7 @@ func main() {
 	CreateClient()
 
 	// FOR TESTING PURPOSES
-	downloadAndUpdateHeads(db)
+	//downloadAndUpdateHeads(db)
 
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
@@ -291,12 +282,6 @@ func main() {
 		go parser(i, c_parse, c_insert, db)
 	}
 	Wp.Add(PARSER_COUNT)
-
-	// Launch downloaders, not sure about the number
-	//for i:= 0; i < DOWNLOADER_COUNT; i++ {
-	//	go BatchDownloader(c_down, c_parse)
-	//}
-	//Wd.Add(DOWNLOADER_COUNT)
 
 	// Launch a single output writer
 	go inserter(c_insert, db)

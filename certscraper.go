@@ -127,11 +127,11 @@ func CreateClient() {
 
 // Download entries and send them to the parsers
 // Download in the maximal batch sizes
-func newDownloadEntries(start int64, end int64, logurl string, c_parse chan<- CTEntry) {
+func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry) {
 	defer Wd.Done()
 	cur := start
 	const RETRY_WAIT = 1
-	for cur < end {
+	for cur <= end {
 		url := fmt.Sprintf("%sct/v1/get-entries?start=%d&end=%d", logurl, cur, end)
 		entries, err := DownloadEntries(url)
 
@@ -146,6 +146,7 @@ func newDownloadEntries(start int64, end int64, logurl string, c_parse chan<- CT
 			attempts++
 			if attempts >= 10 {
 				log.Printf("[-] Failed to download entries for %s -> %s\n", url, err)
+				return
 			}
 		}
 
@@ -160,22 +161,21 @@ func newDownloadEntries(start int64, end int64, logurl string, c_parse chan<- CT
 }
 
 // Launch for each log, split the log into chunks, launch goroutine for each chunk
-func distributeWork(oldHeadSize int64, newHeadSize int64, downloaderCount int, logurl string, c_parse chan<- CTEntry) {
+func distributeWork(previousIndex int64, newIndex int64, downloaderCount int64, logurl string, c_parse chan<- CTEntry) {
 	defer Wg.Done()
 
-	chunkSize := (newHeadSize - oldHeadSize) / int64(downloaderCount)
+	if previousIndex == newIndex {
+		return
+	}
 
-	for start := oldHeadSize; start < newHeadSize; start += chunkSize {
-		end := start + chunkSize - 1
-		if end >= newHeadSize {
-			end = newHeadSize
+	batchSize := (newIndex - previousIndex + downloaderCount - 1) / downloaderCount
+	for start := previousIndex + 1; start <= newIndex; start += batchSize {
+		end := start + batchSize - 1
+		if end > newIndex {
+			end = newIndex
 		}
 
-		if start > end {
-			return
-		}
-
-		go newDownloadEntries(start, end, logurl, c_parse)
+		go downloadBatch(start, end, logurl, c_parse)
 		Wd.Add(1)
 	}
 }
