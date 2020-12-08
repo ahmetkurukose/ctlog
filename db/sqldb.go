@@ -8,6 +8,8 @@ import (
     "gopkg.in/gomail.v2"
 	"time"
 	"strconv"
+	"regexp"
+	"errors"
 )
 
 type CertInfo struct {
@@ -22,7 +24,8 @@ type CTLogInfo struct {
 	NewHeadIndex int64
 }
 
-
+var emailRegex = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
+var domainRegex = regexp.MustCompile("^(([a-zA-Z]{1})|([a-zA-Z]{1}[a-zA-Z]{1})|([a-zA-Z]{1}[0-9]{1})|([0-9]{1}[a-zA-Z]{1})|([a-zA-Z0-9][a-zA-Z0-9-_]{1,61}[a-zA-Z0-9])).([a-zA-Z]{2,6}|[a-zA-Z0-9-]{2,30}.[a-zA-Z]{2,3})$")
 
 // Creates a connection to the database and returns it.
 func ConnectToDatabase(database string) *sql.DB {
@@ -43,6 +46,53 @@ func CleanupDownloadTable(db *sql.DB) {
 	db.Exec("DELETE FROM Downloaded")
 }
 
+func isEmailValid(e string) bool {
+	if len(e) < 3 && len(e) > 254 {
+		return false
+	}
+
+	return emailRegex.MatchString(e)
+}
+
+func isDomainValid(d string) bool {
+	return domainRegex.MatchString(d)
+}
+
+func AddMonitors(email string, domains []string, db *sql.DB) error {
+	if !isEmailValid(email) {
+		return errors.New("First argument is not an email address")
+	}
+
+	for i := range domains {
+		if !isDomainValid(domains[i]) {
+			return errors.New("One of the domains is not a valid domain name")
+		}
+	}
+
+	for i := range domains {
+		_, err := db.Exec("INSERT OR IGNORE INTO Monitor VALUES (?, ?)", email, domains[i])
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func RemoveMonitors(email string, domain string, db *sql.DB) error {
+	if !isEmailValid(email) {
+		return errors.New("First argument is not an email address")
+	}
+
+	if !isDomainValid(domain) {
+		return errors.New("Second argument is not a valid domain name")
+	}
+
+	_, err := db.Exec("DELETE FROM Monitor WHERE Email = ? AND Domain = ?", email, domain)
+
+	return err
+}
+
 // Send out the certificate informations to the email monitoring them.
 func SendEmail(email string, certList *list.List) {
 	t := time.Now()
@@ -57,6 +107,7 @@ func SendEmail(email string, certList *list.List) {
 		cur := cert.Value.(CertInfo)
 		certificates += strings.Join([]string{cur.CN, cur.DN, cur.SAN, cur.SerialNumber},"\n")
 	}
+	certificates += "\n\n"
 
 	//TESTING
 	println(email)
@@ -86,6 +137,7 @@ func GetLogIndex(url string, db *sql.DB) (int64, error) {
 // Find monitored certificates, create a map of email -> certificate attributes and send out emails
 func ParseDownloadedCertificates(db *sql.DB) {
 	//TODO: possibly trim ends? For example cesnet.cz -> cesnet, to check cesnet.us
+
 	query := `
 		SELECT Email, CN, DN, Serialnumber, SAN
 		FROM Downloaded
@@ -110,6 +162,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 		)
 
 		rows.Scan(&email, &CN, &DN, &serialnumber, &SAN)
+		// If key in map then...
 		if val, ok := certsForEmail[email]; ok {
 			val.PushBack(CertInfo{CN, DN, serialnumber, SAN})
 		} else {

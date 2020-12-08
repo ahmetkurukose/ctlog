@@ -13,7 +13,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
-	"runtime/pprof"
+	//"runtime/pprof"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -57,7 +57,6 @@ var CTLogs = []string{
 
 var outputCount int64 = 0
 var inputCount int64 = 0
-var db *sql.DB
 var startTime time.Time
 
 const INSERT_BUFFER_SIZE = 10000
@@ -133,7 +132,6 @@ func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 		}
 	}
 
-	//TODO: of by one on all logs?
 	log.Printf("TOTAL INSERTED %d\n", count)
 	Wo.Done()
 }
@@ -208,29 +206,56 @@ func main() {
 
 	flag.Usage = func() { usage() }
 	logurl := flag.String("logurl", "", "Only read from the specified CT log url")
-	cpuprofile := flag.String("cpuprofile", "", "Write cpu profile to file")
+	//cpuprofile := flag.String("cpuprofile", "", "Write cpu profile to file")
 	database := flag.String("db", "", "REQUIRED, path to database")
-
+	//monitor := flag.String("monitor", "", "Path to file containing new monitors")
+	add := flag.String("add", "", "Add monitors, format: \"email domain1 domain2 ...\"")
+	remove := flag.String("remove", "", "Remove monitor, format: \"email domain\"")
+	norun := flag.Bool("norun", false,"Dont run the scan")
 	flag.Parse()
 
 	//-------PROFILING---------
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
+	//if *cpuprofile != "" {
+	//	f, err := os.Create(*cpuprofile)
+	//	if err != nil {
+	//		log.Fatal(err)
+	//	}
+	//	pprof.StartCPUProfile(f)
+	//	defer pprof.StopCPUProfile()
+	//}
 	//-------------------------
 
 	if *database == "" {
 		log.Fatal("[-] No database")
 	}
 
-	db = sqldb.ConnectToDatabase(*database)
+	db := sqldb.ConnectToDatabase(*database)
 	defer sqldb.CloseConnection(db)
 	sqldb.CleanupDownloadTable(db)
+
+
+	if *add != "" {
+		toAdd := strings.Split(*add," ")
+		if err := sqldb.AddMonitors(toAdd[0], toAdd[1:], db); err != nil {
+			log.Printf("[-] Failed adding monitors -> ", err)
+		}
+	}
+
+	if *remove != "" {
+		toRemove := strings.Split(*add," ")
+		if len(toRemove) != 2 {
+			log.Printf("[-] Failed removing monitor, wrong number of arguments")
+		} else {
+			if err := sqldb.RemoveMonitors(toRemove[0], toRemove[1], db); err != nil {
+				log.Printf("[-] Failed removing monitors -> ", err)
+			}
+		}
+	}
+
+	if *norun {
+		return
+	}
+
 
 	// Create http client
 	CreateClient()
@@ -292,15 +317,12 @@ func main() {
 
 	// Start queueing downloads for each log
  	for url, headInfo := range *logInfos {
- 		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, DOWNLOADER_COUNT, url, c_parse)
+ 		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, DOWNLOADER_COUNT, url, c_parse, db)
  		Wg.Add(1)
 	}
 
 	// Wait for work distributors
 	Wg.Wait()
-
- 	// Everything generated, close to-download channel
- 	//close(c_down)
 
  	// Wait for downloaders
  	Wd.Wait()

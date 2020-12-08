@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"database/sql"
 )
 
 var Wd sync.WaitGroup
@@ -107,7 +108,7 @@ func DownloadSTH(logurl string) (CTHead, error) {
 }
 
 // Updates head index.
-func UpdateLogIndex(index int64, logurl string) {
+func UpdateLogIndex(index int64, logurl string, db *sql.DB) {
 	_, err := db.Exec("UPDATE CTLog SET lastIndex = ? WHERE url = ?", index, logurl)
 	if err != nil {
 		log.Printf("[-] Failed to update head index of log %s -> %s\n", logurl, err)
@@ -126,11 +127,14 @@ func CreateClient() {
 
 
 // Download entries and send them to the parsers
-// Download in the maximal batch sizes
+// Download in the maximum batch sizes
 func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry) {
 	defer Wd.Done()
 	cur := start
 	const RETRY_WAIT = 1
+
+	// We increase the index by the number of entries we got from the request
+	// That means the download speed will most likely not be linear
 	for cur <= end {
 		url := fmt.Sprintf("%sct/v1/get-entries?start=%d&end=%d", logurl, cur, end)
 		entries, err := DownloadEntries(url)
@@ -138,6 +142,7 @@ func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry
 		attempts := 0
 		for err != nil {
 			time.Sleep(time.Duration(RETRY_WAIT * attempts) * time.Second)
+
 			// Common error at the start of the scan, don't log it
 			if err.Error() != "invalid character '<' looking for beginning of value" {
 				log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
@@ -161,7 +166,7 @@ func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry
 }
 
 // Launch for each log, split the log into chunks, launch goroutine for each chunk
-func distributeWork(previousIndex int64, newIndex int64, downloaderCount int64, logurl string, c_parse chan<- CTEntry) {
+func distributeWork(previousIndex int64, newIndex int64, downloaderCount int64, logurl string, c_parse chan<- CTEntry, db *sql.DB) {
 	defer Wg.Done()
 
 	if previousIndex == newIndex {
@@ -178,4 +183,6 @@ func distributeWork(previousIndex int64, newIndex int64, downloaderCount int64, 
 		go downloadBatch(start, end, logurl, c_parse)
 		Wd.Add(1)
 	}
+
+	UpdateLogIndex(newIndex, logurl, db)
 }
