@@ -13,7 +13,6 @@ import (
 	"os"
 	"regexp"
 	"runtime"
-	//"runtime/pprof"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -206,24 +205,11 @@ func main() {
 
 	flag.Usage = func() { usage() }
 	logurl := flag.String("logurl", "", "Only read from the specified CT log url")
-	//cpuprofile := flag.String("cpuprofile", "", "Write cpu profile to file")
 	database := flag.String("db", "", "REQUIRED, path to database")
-	//monitor := flag.String("monitor", "", "Path to file containing new monitors")
 	add := flag.String("add", "", "Add monitors, format: \"email domain1 domain2 ...\"")
 	remove := flag.String("remove", "", "Remove monitor, format: \"email domain\"")
 	norun := flag.Bool("norun", false,"Dont run the scan")
 	flag.Parse()
-
-	//-------PROFILING---------
-	//if *cpuprofile != "" {
-	//	f, err := os.Create(*cpuprofile)
-	//	if err != nil {
-	//		log.Fatal(err)
-	//	}
-	//	pprof.StartCPUProfile(f)
-	//	defer pprof.StopCPUProfile()
-	//}
-	//-------------------------
 
 	if *database == "" {
 		log.Fatal("[-] No database")
@@ -236,15 +222,19 @@ func main() {
 
 	if *add != "" {
 		toAdd := strings.Split(*add," ")
-		if err := sqldb.AddMonitors(toAdd[0], toAdd[1:], db); err != nil {
-			log.Printf("[-] Failed adding monitors -> ", err)
+		if len(toAdd) < 2 {
+			log.Printf("[-] Failed adding monitor, wrong number of arguments, check doublequotes")
+		} else {
+			if err := sqldb.AddMonitors(toAdd[0], toAdd[1:], db); err != nil {
+				log.Printf("[-] Failed adding monitors -> ", err)
+			}
 		}
 	}
 
 	if *remove != "" {
 		toRemove := strings.Split(*add," ")
 		if len(toRemove) != 2 {
-			log.Printf("[-] Failed removing monitor, wrong number of arguments")
+			log.Printf("[-] Failed removing monitor, wrong number of arguments, check doublequotes")
 		} else {
 			if err := sqldb.RemoveMonitors(toRemove[0], toRemove[1], db); err != nil {
 				log.Printf("[-] Failed removing monitors -> ", err)
@@ -253,6 +243,7 @@ func main() {
 	}
 
 	if *norun {
+		log.Printf("NORUN")
 		return
 	}
 

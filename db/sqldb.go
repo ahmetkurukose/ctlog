@@ -179,6 +179,4 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber, cert.SAN)
 		}
 	}
-
-	//CleanupDownloadTable(db)
 }

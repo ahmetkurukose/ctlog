@@ -20,6 +20,8 @@ sqlite3 path-to-ctlog/db/certdb.sqlite
 ###Parameters
 - `-logurl url` - used when we only want to scan one log
 - `-db path` - path to SQLite3 database
+- `-add "email domain1 domain2..."` - add monitor to domain, has to be surrounded by double quotes
+- `-remove "email domain"` - remove monitor, has to be surrounded by double quotes
 
 ##Architecture
 For used keywords refer to [Certificate Transparency RFC](https://tools.ietf.org/html/rfc6962)
