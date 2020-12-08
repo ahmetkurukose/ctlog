@@ -3,13 +3,13 @@ package sqldb
 import (
 	"container/list"
 	"database/sql"
-	"log"
-	"strings"
-    "gopkg.in/gomail.v2"
-	"time"
-	"strconv"
-	"regexp"
 	"errors"
+	"gopkg.in/gomail.v2"
+	"log"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type CertInfo struct {

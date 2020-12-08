@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"database/sql"
 )
 
 var Wd sync.WaitGroup
@@ -109,7 +109,7 @@ func DownloadSTH(logurl string) (CTHead, error) {
 
 // Updates head index.
 func UpdateLogIndex(index int64, logurl string, db *sql.DB) {
-	_, err := db.Exec("UPDATE CTLog SET lastIndex = ? WHERE url = ?", index, logurl)
+	_, err := db.Exec("UPDATE CTLog SET HeadIndex = ? WHERE url = ?", index, logurl)
 	if err != nil {
 		log.Printf("[-] Failed to update head index of log %s -> %s\n", logurl, err)
 		return
