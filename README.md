@@ -1,6 +1,6 @@
 # ctlog
 Program, that sends emails to users regarding new certificates issued to their domains or domains that could be used for a MITM attack.
-##Requirements
+## Requirements
 - Go 15.3
 - SQLite3
 
@@ -16,14 +16,14 @@ sqlite3 path-to-ctlog/db/certdb.sqlite
 .quit
 ```
 
-##Usage
-###Parameters
+## Usage
+### Parameters
 - `-logurl url` - used when we only want to scan one log
 - `-db path` - path to SQLite3 database
 - `-add "email domain1 domain2..."` - add monitor to domain, has to be surrounded by double quotes
 - `-remove "email domain"` - remove monitor, has to be surrounded by double quotes
 
-##Architecture
+## Architecture
 For used keywords refer to [Certificate Transparency RFC](https://tools.ietf.org/html/rfc6962)
 The database consists of 4 tables:
 - CTLog - pairs of CT log urls and their last downloaded index 
