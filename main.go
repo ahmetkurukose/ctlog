@@ -26,7 +26,6 @@ var MatchIPv6 = regexp.MustCompile(`^((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:
 // MatchIPv4 is a regular expression for validating IPv4 addresses
 var MatchIPv4 = regexp.MustCompile(`^(?:(?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2}))$`)
 
-
 var CTLogs = []string{
 	"https://ct.googleapis.com/logs/argon2019/",
 	"https://ct.googleapis.com/logs/argon2020/",
