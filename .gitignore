@@ -5,9 +5,11 @@
 *.so
 *.dylib
 
-certdb.sqlite
+db/certdb.sqlite
 console.log
 bench.prof
+.idea
+.gitignore
 
 # Test binary, built with `go test -c`
 *.test

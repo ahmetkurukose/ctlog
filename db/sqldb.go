@@ -24,6 +24,13 @@ type CTLogInfo struct {
 	NewHeadIndex int64
 }
 
+type SMTPInfo struct {
+	host string
+	port int
+	username string
+	password string
+}
+
 var emailRegex = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
 var domainRegex = regexp.MustCompile("^(([a-zA-Z]{1})|([a-zA-Z]{1}[a-zA-Z]{1})|([a-zA-Z]{1}[0-9]{1})|([0-9]{1}[a-zA-Z]{1})|([a-zA-Z0-9][a-zA-Z0-9-_]{1,61}[a-zA-Z0-9])).([a-zA-Z]{2,6}|[a-zA-Z0-9-]{2,30}.[a-zA-Z]{2,3})$")
 
@@ -94,11 +101,11 @@ func RemoveMonitors(email string, domain string, db *sql.DB) error {
 }
 
 // Send out the certificate informations to the email monitoring them.
-func SendEmail(email string, certList *list.List) {
+func SendEmail(smtpInfo SMTPInfo, email string, certList *list.List) {
 	t := time.Now()
 	date := strings.Join([]string{strconv.Itoa(t.Day()), strconv.Itoa(int(t.Month())), strconv.Itoa(t.Year())}, ".")
 	m := gomail.NewMessage()
-	m.SetHeader("From", "ctlog@cesnet.cz")
+	m.SetHeader("From", "noreply@cesnet.cz")
 	m.SetHeader("To", email)
 	m.SetHeader("Subject", "New certificates " + date)
 
@@ -113,15 +120,14 @@ func SendEmail(email string, certList *list.List) {
 	println(email)
 	println(certificates)
 
-	//
-	//m.SetBody("text/html", "")
-	//
-	//d := gomail.NewDialer("ctlog@", 587, "user", "123456")
-	//
-	//// Send the email to Bob, Cora and Dan.
-	//if err := d.DialAndSend(m); err != nil {
-	//	log.Printf("[-] Failed sending email, %s\n", err)
-	//}
+	m.SetBody("text/html", certificates)
+
+	d := gomail.NewDialer(smtpInfo.host, smtpInfo.port, smtpInfo.username, smtpInfo.password)
+
+	// Send the email to Bob, Cora and Dan.
+	if err := d.DialAndSend(m); err != nil {
+		log.Printf("[-] Failed sending email, %s\n", err)
+	}
 }
 
 // Returns previous head index of a log.
@@ -133,9 +139,43 @@ func GetLogIndex(url string, db *sql.DB) (int64, error) {
 	return lastIndex, err
 }
 
+func checkSMTP(smtpInfo string) (SMTPInfo, bool) {
+	arr := strings.Split(smtpInfo," ")
+	if len(arr) != 4 {
+		log.Printf("[-] Cannot send emails, argument count mismatch\n")
+		return SMTPInfo{}, false
+	}
+
+	port, err := strconv.ParseInt(arr[1],10,0)
+
+	if err != nil {
+		log.Printf("[-] Cannot send emails, port is not a number\n")
+		return SMTPInfo{}, false
+	}
+	
+	d := gomail.NewDialer(arr[0], int(port), arr[2],arr[3])
+	s, err := d.Dial()
+	if s != nil {
+		defer s.Close()
+	}
+
+    if err != nil {
+    	log.Printf("[-] Could not connect to the SMTP server -> %s\n", err)
+	}
+
+	ret := SMTPInfo{
+		host:     arr[0],
+		port:     int(port),
+		username: arr[2],
+		password: arr[3],
+	}
+
+	return ret, err == nil
+}
+
 
 // Find monitored certificates, create a map of email -> certificate attributes and send out emails
-func ParseDownloadedCertificates(db *sql.DB) {
+func ParseDownloadedCertificates(smtpInfo string, db *sql.DB) {
 	//TODO: possibly trim ends? For example cesnet.cz -> cesnet, to check cesnet.us
 
 	query := `
@@ -171,9 +211,14 @@ func ParseDownloadedCertificates(db *sql.DB) {
 		}
 	}
 
+	smtp, canSendEmails := checkSMTP(smtpInfo)
+
 	log.Println("CERTS ARE IN MAP, INSERTING INTO DATABASE")
 	for email, certList := range certsForEmail {
-		SendEmail(email, certList)
+		if canSendEmails {
+			SendEmail(smtp, email, certList)
+		}
+
 		for e := certList.Front(); e != nil; e = e.Next() {
 			cert := e.Value.(CertInfo)
 			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber, cert.SAN)

@@ -208,6 +208,8 @@ func main() {
 	add := flag.String("add", "", "Add monitors, format: \"email domain1 domain2 ...\"")
 	remove := flag.String("remove", "", "Remove monitor, format: \"email domain\"")
 	norun := flag.Bool("norun", false,"Dont run the scan")
+	smtp := flag.String("smtp", "", "SMTP server parameters, format: \"host port username password\"")
+
 	flag.Parse()
 
 	if *database == "" {
@@ -247,11 +249,12 @@ func main() {
 	}
 
 
+
 	// Create http client
 	CreateClient()
 
 	// FOR TESTING PURPOSES
-	//downloadAndUpdateHeads(db)
+	downloadAndUpdateHeads(db)
 
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
@@ -336,6 +339,6 @@ func main() {
 
  	// Finished inserting, start working with the data
  	log.Println("FINISHED INSERTING")
-	sqldb.ParseDownloadedCertificates(db)
+	sqldb.ParseDownloadedCertificates(*smtp, db)
  	log.Println("FINISHED SENDING EMAILS, EXITING")
 }
