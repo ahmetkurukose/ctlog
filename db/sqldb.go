@@ -33,6 +33,8 @@ type SMTPInfo struct {
 
 var emailRegex = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
 var domainRegex = regexp.MustCompile("^(([a-zA-Z]{1})|([a-zA-Z]{1}[a-zA-Z]{1})|([a-zA-Z]{1}[0-9]{1})|([0-9]{1}[a-zA-Z]{1})|([a-zA-Z0-9][a-zA-Z0-9-_]{1,61}[a-zA-Z0-9])).([a-zA-Z]{2,6}|[a-zA-Z0-9-]{2,30}.[a-zA-Z]{2,3})$")
+var emailConst = "<head>\n    <style>\n        body {\n            font-family: monospace;\n        }\n        ul {\n            font-weight: bold;\n            list-style-type: none;\n        }\n        li {\n            font-weight: lighter;\n        }\n    </style>\n</head>\n<body>\n    <h2>TENTO EMAIL BYL AUTOMATICKY VYGENEROVÁN / THIS IS EMAIL HAS BEEN AUTOMATICALLY GENERATED</h2>\n    <h2>NA TENTO EMAIL NEODPOVÍDEJTE / DO NOT REPLY TO THIS EMAIL</h2>\n\n    <a>Dobrý den,</a><br><br>\n        <a>Služba CTLog identifikovala vydání těchto nových certifikátů:</a>\n"
+
 
 // Creates a connection to the database and returns it.
 func ConnectToDatabase(database string) *sql.DB {
@@ -65,6 +67,7 @@ func isDomainValid(d string) bool {
 	return domainRegex.MatchString(d)
 }
 
+// Add monitors to the database
 func AddMonitors(email string, domains []string, db *sql.DB) error {
 	if !isEmailValid(email) {
 		return errors.New("First argument is not an email address")
@@ -86,6 +89,7 @@ func AddMonitors(email string, domains []string, db *sql.DB) error {
 	return nil
 }
 
+// Remove monitor from the database
 func RemoveMonitors(email string, domain string, db *sql.DB) error {
 	if !isEmailValid(email) {
 		return errors.New("First argument is not an email address")
@@ -102,25 +106,31 @@ func RemoveMonitors(email string, domain string, db *sql.DB) error {
 
 // Send out the certificate informations to the email monitoring them.
 func SendEmail(smtpInfo SMTPInfo, email string, certList *list.List) {
-	t := time.Now()
+	t := time.Now().Add(-24 * time.Hour)
 	date := strings.Join([]string{strconv.Itoa(t.Day()), strconv.Itoa(int(t.Month())), strconv.Itoa(t.Year())}, ".")
+
 	m := gomail.NewMessage()
-	m.SetHeader("From", "noreply@cesnet.cz")
+	m.SetHeader("From", "no-reply@cesnet.cz")
 	m.SetHeader("To", email)
-	m.SetHeader("Subject", "New certificates " + date)
+	m.SetHeader("Subject", "[CTLog] Nové certifikáty " + date)
 
-	certificates := ""
+	var sb strings.Builder
+
+	sb.WriteString(emailConst)
+
 	for cert := certList.Front(); cert != nil; cert = cert.Next() {
+		sb.WriteString("<ul>")
 		cur := cert.Value.(CertInfo)
-		certificates += strings.Join([]string{cur.CN, cur.DN, cur.SAN, cur.SerialNumber},"\n")
+		sb.WriteString(cur.CN)
+		sb.WriteString("<li>Subject DN: " + cur.DN + "</li>" +
+						"<li>Serial: " + cur.SerialNumber + "</li>" +
+						"<li>Names: " + cur.SAN + "</li>")
+		sb.WriteString("</ul>")
 	}
-	certificates += "\n\n"
 
-	//TESTING
-	println(email)
-	println(certificates)
-
-	m.SetBody("text/html", certificates)
+	sb.WriteString("<a href=\"pki.cesnet.cz\">O službě</a>")
+	sb.WriteString("<img src=\"https://www.cesnet.cz/wp-content/uploads/2018/01/cesnet-malelogo.jpg\"><br></body>")
+	m.SetBody("text/html", sb.String())
 
 	d := gomail.NewDialer(smtpInfo.host, smtpInfo.port, smtpInfo.username, smtpInfo.password)
 
@@ -176,8 +186,7 @@ func checkSMTP(smtpInfo string) (SMTPInfo, bool) {
 
 // Find monitored certificates, create a map of email -> certificate attributes and send out emails
 func ParseDownloadedCertificates(smtpInfo string, db *sql.DB) {
-	//TODO: possibly trim ends? For example cesnet.cz -> cesnet, to check cesnet.us
-
+	//cesnet.cz should check only *cesnet.cz*
 	query := `
 		SELECT Email, CN, DN, Serialnumber, SAN
 		FROM Downloaded

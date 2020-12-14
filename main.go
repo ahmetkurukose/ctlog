@@ -58,7 +58,7 @@ var inputCount int64 = 0
 var startTime time.Time
 
 const INSERT_BUFFER_SIZE = 10000
-const DOWNLOADER_COUNT = 75
+const DOWNLOADER_COUNT = 65
 const DOWNLOAD_BUFFER_SIZE = DOWNLOADER_COUNT * BATCH_SIZE
 const PARSE_BUFFER_SIZE = 1000
 const BATCH_SIZE = 10
@@ -188,11 +188,11 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 		// Valid input
 		atomic.AddInt64(&inputCount, 1)
 
-		o <- sqldb.CertInfo{
+		o <- sqldb.CertInfo {
 			CN:           cert.Subject.CommonName,
 			DN:           cert.Subject.String(),
-			SerialNumber: cert.SerialNumber.String(),
-			SAN:		  strings.Join(cert.DNSNames, " "),
+			SerialNumber: cert.SerialNumber.Text(16),
+			SAN:		  strings.Join(cert.DNSNames, "\n"),
 		}
 	}
 }
@@ -207,7 +207,7 @@ func main() {
 	database := flag.String("db", "", "REQUIRED, path to database")
 	add := flag.String("add", "", "Add monitors, format: \"email domain1 domain2 ...\"")
 	remove := flag.String("remove", "", "Remove monitor, format: \"email domain\"")
-	norun := flag.Bool("norun", false,"Dont run the scan")
+	norun := flag.Bool("norun", false,"Do not run the scan")
 	smtp := flag.String("smtp", "", "SMTP server parameters, format: \"host port username password\"")
 
 	flag.Parse()
@@ -247,8 +247,6 @@ func main() {
 		log.Printf("NORUN")
 		return
 	}
-
-
 
 	// Create http client
 	CreateClient()
