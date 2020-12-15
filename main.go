@@ -208,7 +208,6 @@ func main() {
 	add := flag.String("add", "", "Add monitors, format: \"email domain1 domain2 ...\"")
 	remove := flag.String("remove", "", "Remove monitor, format: \"email domain\"")
 	norun := flag.Bool("norun", false,"Do not run the scan")
-	smtp := flag.String("smtp", "", "SMTP server parameters, format: \"host port username password\"")
 
 	flag.Parse()
 
@@ -337,6 +336,6 @@ func main() {
 
  	// Finished inserting, start working with the data
  	log.Println("FINISHED INSERTING")
-	sqldb.ParseDownloadedCertificates(*smtp, db)
+	sqldb.ParseDownloadedCertificates(db)
  	log.Println("FINISHED SENDING EMAILS, EXITING")
 }
