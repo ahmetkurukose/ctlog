@@ -132,12 +132,15 @@ func GetLogIndex(url string, db *sql.DB) (int64, error) {
 
 // Find monitored certificates, create a map of email -> certificate attributes and send out emails
 func ParseDownloadedCertificates(db *sql.DB) {
-	//cesnet.cz should check only *cesnet.cz*
+	//cesnet.cz should check: 'cesnet.cz', 'www.cesnet.cz', '*.cesnet.cz' and the SAN for '
 	query := `
 		SELECT Email, CN, DN, Serialnumber, SAN
 		FROM Downloaded
-		INNER JOIN Monitor M ON INSTR(DN, M.Domain) > 0 OR
-		                        INSTR(SAN, M.Domain) > 0;`
+        INNER JOIN Monitor M ON CN = M.Domain OR
+                                CN = 'www.' || M.Domain OR
+                                CN LIKE '%.' || M.Domain OR
+                                SAN LIKE '%\n' || M.Domain || '%' OR
+                                INSTR(SAN, '.' || M.Domain) > 0;`
 
 	rows, err := db.Query(query)
 	if err != nil {
