@@ -143,10 +143,14 @@ func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry
 		for err != nil {
 			time.Sleep(time.Duration(RETRY_WAIT * attempts) * time.Second)
 
-			// Common error at the start of the scan, don't log it
-			if err.Error() != "invalid character '<' looking for beginning of value" {
+			// Common errors, we don't have to log them
+			// < = <null>
+			// T = Too many connections, throttling
+			if  err.Error() != "invalid character '<' looking for beginning of value" ||
+				err.Error() != "invalid character 'T' looking for beginning of value" {
 				log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
 			}
+
 			entries, err = DownloadEntries(url)
 			attempts++
 			if attempts >= 10 {
