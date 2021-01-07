@@ -27,7 +27,7 @@ sqlite3 path-to-ctlog/db/certdb.sqlite
 - `-db path` - path to SQLite3 database
 - `-add "email domain1 domain2..."` - add monitor to domain, has to be surrounded by double quotes
 - `-remove "email domain"` - remove monitor, has to be surrounded by double quotes
-- `-smtp "host port username password"` - parameters for the SMTP server
+
 ## Architecture
 For used keywords refer to [Certificate Transparency RFC](https://tools.ietf.org/html/rfc6962)
 
@@ -46,7 +46,7 @@ We send the downloaded certificates to the parsing channel, from which the parse
 
 
 # CTlog
-Program, který upozorňuje uživatele ohledně vydání certifikátů pro jejich domény a na certifikáty, které by mohly být použity pro MITM útoky.
+Program, který upozorňuje uživatele na vydané certifikáty pro jejich domény a na certifikáty, které by mohly být použity pro MITM útoky.
 
 ## Instalation
 ## Instalace

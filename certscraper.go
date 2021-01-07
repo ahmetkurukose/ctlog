@@ -94,7 +94,7 @@ func DownloadEntries(url string) (CTEntries, error) {
 	return entries, err
 }
 
-// Downloads the CT Head of the log.
+// Downloads the Tree Head of the log.
 func DownloadSTH(logurl string) (CTHead, error) {
 	var sth CTHead
 	url := fmt.Sprintf("%sct/v1/get-sth", logurl)
@@ -146,7 +146,7 @@ func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry
 			// Common errors, we don't have to log them
 			// < = <null>
 			// T = Too many connections, throttling
-			if  err.Error() != "invalid character '<' looking for beginning of value" ||
+			if  err.Error() != "invalid character '<' looking for beginning of value" &&
 				err.Error() != "invalid character 'T' looking for beginning of value" {
 				log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
 			}

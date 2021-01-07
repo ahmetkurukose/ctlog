@@ -134,7 +134,7 @@ func GetLogIndex(url string, db *sql.DB) (int64, error) {
 func ParseDownloadedCertificates(db *sql.DB) {
 	//cesnet.cz should check: 'cesnet.cz', 'www.cesnet.cz', '*.cesnet.cz' and the SAN for '
 	query := `
-		SELECT Email, CN, DN, Serialnumber, SAN
+		SELECT DISTINCT Email, CN, DN, Serialnumber, SAN
 		FROM Downloaded
         INNER JOIN Monitor M ON CN = M.Domain OR
                                 CN = 'www.' || M.Domain OR
