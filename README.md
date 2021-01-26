@@ -76,7 +76,6 @@ sqlite3 path-to-ctlog/db/certdb.sqlite
 - `-db path` - cesta k SQLite3 databázi
 - `-add "email domain1 domain2..."` - přidání monitoru do databáze, musí být v uvozovkách
 - `-remove "email domain"` - odebrání monitoru, musí být v uvozovkách
-- `-smtp "host port username password"` - argumenty pro SMTP připojení
 
 ## Architektura
 Použitá klíčová slova lze nalézt v [RFC6962](https://tools.ietf.org/html/rfc6962)

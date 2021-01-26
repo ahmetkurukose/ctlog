@@ -21,26 +21,31 @@ var Wg sync.WaitGroup
 
 var httpClient *http.Client
 
+// Information needed for a download of a batch of entries
 type CTBatchData struct {
-	Url string
+	Url        string
 	StartIndex int64
-	StopIndex int64
+	StopIndex  int64
 }
 
+// A entry to be parsed
 type CTEntry struct {
 	LeafInput []byte `json:"leaf_input"`
 	ExtraData []byte `json:"extra_data"`
 }
 
+// An array of entries
 type CTEntries struct {
 	Entries []CTEntry `json:"entries"`
 }
 
+// Error message when parsing CTEntries
 type CTEntriesError struct {
 	ErrorMessage string `json:"error_message"`
 	Success      bool   `json:"success"`
 }
 
+// STH of a CT log
 type CTHead struct {
 	TreeSize          int64  `json:"tree_size"`
 	Timestamp         int64  `json:"timestamp"`
@@ -125,7 +130,6 @@ func CreateClient() {
 	httpClient = &http.Client{Transport: tr}
 }
 
-
 // Download entries and send them to the parsers
 // Download in the maximum batch sizes
 func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry) {
@@ -141,12 +145,12 @@ func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry
 
 		attempts := 0
 		for err != nil {
-			time.Sleep(time.Duration(RETRY_WAIT * attempts) * time.Second)
+			time.Sleep(time.Duration(RETRY_WAIT*attempts) * time.Second)
 
 			// Common errors, we don't have to log them
 			// < = <null>
 			// T = Too many connections, throttling
-			if  err.Error() != "invalid character '<' looking for beginning of value" &&
+			if err.Error() != "invalid character '<' looking for beginning of value" &&
 				err.Error() != "invalid character 'T' looking for beginning of value" {
 				log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
 			}

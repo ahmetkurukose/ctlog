@@ -1,11 +1,11 @@
 package main
 
 import (
+	ct "ctlog/ct"
 	sqldb "ctlog/db"
 	"database/sql"
 	"flag"
 	"fmt"
-	ct "github.com/google/certificate-transparency-go"
 	ct_tls "github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/x509"
 	_ "github.com/mattn/go-sqlite3"
@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	//"github.com/go-martini/martini"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -26,42 +27,13 @@ var MatchIPv6 = regexp.MustCompile(`^((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:
 // MatchIPv4 is a regular expression for validating IPv4 addresses
 var MatchIPv4 = regexp.MustCompile(`^(?:(?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})[.](?:25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2}))$`)
 
-var CTLogs = []string{
-	"https://ct.googleapis.com/logs/argon2019/",
-	"https://ct.googleapis.com/logs/argon2020/",
-	"https://ct.googleapis.com/logs/argon2021/",
-	"https://ct.googleapis.com/logs/xenon2019/",
-	"https://ct.googleapis.com/logs/xenon2020/",
-	"https://ct.googleapis.com/logs/xenon2021/",
-	"https://ct.googleapis.com/logs/xenon2022/",
-	"https://ct.googleapis.com/aviator/",
-	"https://ct.googleapis.com/icarus/",
-	"https://ct.googleapis.com/pilot/",
-	"https://ct.googleapis.com/rocketeer/",
-	"https://ct.googleapis.com/skydiver/",
-	"https://oak.ct.letsencrypt.org/2020/",
-	"https://oak.ct.letsencrypt.org/2021/",
-	"https://oak.ct.letsencrypt.org/2022/",
-	"https://oak.ct.letsencrypt.org/2023/",
-	"https://ct.cloudflare.com/logs/nimbus2019/",
-	"https://ct.cloudflare.com/logs/nimbus2020/",
-	"https://ct.cloudflare.com/logs/nimbus2021/",
-	"https://ct.cloudflare.com/logs/nimbus2022/",
-	"https://ct.cloudflare.com/logs/nimbus2023/",
-	"https://ctserver.cnnic.cn/",
-	"https://sabre.ct.comodo.com/",
-	"https://mammoth.ct.comodo.com/",
-}
-
 var outputCount int64 = 0
 var inputCount int64 = 0
 var startTime time.Time
 
 const INSERT_BUFFER_SIZE = 10000
 const DOWNLOADER_COUNT = 65
-const DOWNLOAD_BUFFER_SIZE = DOWNLOADER_COUNT * BATCH_SIZE
 const PARSE_BUFFER_SIZE = 1000
-const BATCH_SIZE = 10
 const PARSER_COUNT = 4
 
 func usage() {
@@ -75,18 +47,30 @@ func usage() {
 
 // For testing purposes.
 // Downloads and updates the database with new heads, used for reseting.
-func downloadAndUpdateHeads(db *sql.DB) {
-	for l := range CTLogs {
-		head, err := DownloadSTH(CTLogs[l])
-		if err != nil {
-			log.Fatal("Failed downloading log")
-		}
-		db.Exec("UPDATE CTLog SET HeadIndex = ? WHERE Url = ?", head.TreeSize - 1, CTLogs[l])
+func downloadAndUpdateHeads(db *sql.DB) error {
+	rows, err := db.Query("SELECT Url FROM CTLog")
+	if err != nil {
+		log.Fatal("[-] Failed to query logurls from database -> ", err, "\n")
 	}
+	for rows.Next() {
+		var url string
+		err = rows.Scan(&url)
+		if err != nil {
+			return err
+		}
+
+		sth, err := DownloadSTH(url)
+		if err != nil {
+			return err
+		}
+		db.Exec("UPDATE CTLog SET HeadIndex = ? WHERE Url = ?", sth.TreeSize-1, url)
+	}
+
+	return nil
 }
 
 // Downloads the new STHs from the logs, returns a map of log url -> old and new index
-func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error){
+func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error) {
 	resultMap := make(map[string]sqldb.CTLogInfo)
 	rows, err := db.Query("SELECT Url, HeadIndex FROM CTLog")
 	if err != nil {
@@ -124,16 +108,15 @@ func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 		atomic.AddInt64(&outputCount, 1)
 
 		count++
-		if count % 1000000 == 0 {
+		if count%1000000 == 0 {
 			end := time.Now()
-			println("O", end.Sub(startTime).String(), count / 1000000)
+			println("O", end.Sub(startTime).String(), count/1000000)
 		}
 	}
 
 	log.Printf("TOTAL INSERTED %d\n", count)
 	Wo.Done()
 }
-
 
 // Takes out and parses Merkle tree leaf into a certificate info struct
 // Sends the result into the database inserter
@@ -184,105 +167,37 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			}
 		}
 
-
 		// Valid input
 		atomic.AddInt64(&inputCount, 1)
 
-		o <- sqldb.CertInfo {
+		o <- sqldb.CertInfo{
 			CN:           cert.Subject.CommonName,
 			DN:           cert.Subject.String(),
 			SerialNumber: cert.SerialNumber.Text(16),
-			SAN:		  strings.Join(cert.DNSNames, "\n"),
+			SAN:          strings.Join(cert.DNSNames, "\n"),
 		}
 	}
 }
 
-func main() {
-	log.Println("STARTING")
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	os.Setenv("LC_ALL", "C")
-
-	flag.Usage = func() { usage() }
-	logurl := flag.String("logurl", "", "Only read from the specified CT log url")
-	database := flag.String("db", "", "REQUIRED, path to database")
-	add := flag.String("add", "", "Add monitors, format: \"email domain1 domain2 ...\"")
-	remove := flag.String("remove", "", "Remove monitor, format: \"email domain\"")
-	norun := flag.Bool("norun", false,"Do not run the scan")
-
-	flag.Parse()
-
-	if *database == "" {
-		log.Fatal("[-] No database")
-	}
-
-	db := sqldb.ConnectToDatabase(*database)
-	defer sqldb.CloseConnection(db)
-	sqldb.CleanupDownloadTable(db)
-
-
-	if *add != "" {
-		toAdd := strings.Split(*add," ")
-		if len(toAdd) < 2 {
-			log.Printf("[-] Failed adding monitor, wrong number of arguments, check doublequotes")
-		} else {
-			if err := sqldb.AddMonitors(toAdd[0], toAdd[1:], db); err != nil {
-				log.Printf("[-] Failed adding monitors -> ", err)
-			}
-		}
-	}
-
-	if *remove != "" {
-		toRemove := strings.Split(*add," ")
-		if len(toRemove) != 2 {
-			log.Printf("[-] Failed removing monitor, wrong number of arguments, check doublequotes")
-		} else {
-			if err := sqldb.RemoveMonitors(toRemove[0], toRemove[1], db); err != nil {
-				log.Printf("[-] Failed removing monitors -> ", err)
-			}
-		}
-	}
-
-	if *norun {
-		log.Printf("NORUN")
-		return
-	}
-
-	// Create http client
-	CreateClient()
-
+func run(db *sql.DB) {
 	// FOR TESTING PURPOSES
-	downloadAndUpdateHeads(db)
+	//downloadAndUpdateHeads(db)
 
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
 
-	// Distinguish between single and all log check
-	if *logurl != "" {
-		index, err := sqldb.GetLogIndex(*logurl, db)
-		if err != nil {
-			log.Fatal("[-] Error while fetching log, closing -> err", err)
-		}
-		sth, err := DownloadSTH(*logurl)
-		if err != nil {
-			log.Fatal("[-] Error while fetching log, closing -> err", err)
-		}
-		*logInfos = make(map[string]sqldb.CTLogInfo)
-		(*logInfos)[*logurl] = sqldb.CTLogInfo{index, sth.TreeSize - 1}
-	} else {
-		logInfos, err = downloadHeads(db)
-		if err != nil {
-			log.Fatal("[-] Error while fetching logs, closing -> ", err)
-		}
+	logInfos, err = downloadHeads(db)
+	if err != nil {
+		log.Fatal("[-] Error while fetching logs, closing -> ", err)
 	}
 
 	// Print the amounts to download from each log and then the sum
 	var all int64 = 0
 	for u, i := range *logInfos {
 		all += i.NewHeadIndex - i.OldHeadIndex
-		fmt.Printf("%sct/v1/get-entries?start=%d&end=%d      %d\n", u, i.OldHeadIndex, i.NewHeadIndex, i.NewHeadIndex - i.OldHeadIndex)
+		fmt.Printf("%sct/v1/get-entries?start=%d&end=%d      %d\n", u, i.OldHeadIndex, i.NewHeadIndex, i.NewHeadIndex-i.OldHeadIndex)
 	}
 	println("TO DOWNLOAD: ", all)
-
 
 	// Create channels
 
@@ -306,36 +221,91 @@ func main() {
 	startTime = time.Now()
 
 	// Start queueing downloads for each log
- 	for url, headInfo := range *logInfos {
- 		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, DOWNLOADER_COUNT, url, c_parse, db)
- 		Wg.Add(1)
+	for url, headInfo := range *logInfos {
+		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, DOWNLOADER_COUNT, url, c_parse, db)
+		Wg.Add(1)
 	}
 
 	// Wait for work distributors
 	Wg.Wait()
 
- 	// Wait for downloaders
- 	Wd.Wait()
+	// Wait for downloaders
+	Wd.Wait()
 	downloadEndTime := time.Now()
 	log.Println("FINISHED DOWNLOADING")
 	log.Println("Download duration = ", downloadEndTime.Sub(startTime))
 
- 	// Everything downloaded, close to-parse channel
+	// Everything downloaded, close to-parse channel
 	close(c_parse)
 
- 	// Wait for parsers
- 	Wp.Wait()
+	// Wait for parsers
+	Wp.Wait()
 	log.Println("FINISHED PARSING")
 
+	// Everything parsed, close to-insert channel
+	close(c_insert)
 
- 	// Everything parsed, close to-insert channel
- 	close(c_insert)
+	// Wait for the inserter
+	Wo.Wait()
 
- 	// Wait for the inserter
- 	Wo.Wait()
-
- 	// Finished inserting, start working with the data
- 	log.Println("FINISHED INSERTING")
+	// Finished inserting, start working with the data
+	log.Println("FINISHED INSERTING")
 	sqldb.ParseDownloadedCertificates(db)
- 	log.Println("FINISHED SENDING EMAILS, EXITING")
+	log.Println("FINISHED SENDING EMAILS, EXITING")
+}
+
+func main() {
+	log.Println("STARTING")
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	os.Setenv("LC_ALL", "C")
+
+	flag.Usage = func() { usage() }
+	database := flag.String("db", "", "REQUIRED, path to database")
+	norun := flag.Bool("norun", false, "Do not run the scan")
+	add := flag.String("add", "", "Add monitors, format: \"email domain1 domain2 ...\"")
+	remove := flag.String("remove", "", "Remove monitor, format: \"email domain\"")
+
+	flag.Parse()
+
+	if *database == "" {
+		log.Fatal("[-] No database")
+	}
+
+	db := sqldb.ConnectToDatabase(*database)
+	defer sqldb.CloseConnection(db)
+	sqldb.CleanupDownloadTable(db)
+
+	//Trying out routing
+	//doRouting(db)
+
+	// Create http client
+	CreateClient()
+
+	if *add != "" {
+		toAdd := strings.Split(*add, " ")
+		if len(toAdd) < 2 {
+			log.Printf("[-] Failed adding monitor, wrong number of arguments, check doublequotes")
+		} else {
+			if err := sqldb.AddMonitors(toAdd[0], toAdd[1:], db); err != nil {
+				log.Printf("[-] Failed adding monitors -> ", err)
+			}
+		}
+	}
+
+	if *remove != "" {
+		toRemove := strings.Split(*add, " ")
+		if len(toRemove) != 2 {
+			log.Printf("[-] Failed removing monitor, wrong number of arguments, check doublequotes")
+		} else {
+			if err := sqldb.RemoveMonitors(toRemove[0], toRemove[1], db); err != nil {
+				log.Printf("[-] Failed removing monitors -> ", err)
+			}
+		}
+	}
+
+	if *norun {
+		log.Printf("NORUN")
+	} else {
+		run(db)
+	}
 }

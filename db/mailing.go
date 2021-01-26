@@ -1,4 +1,5 @@
 package sqldb
+
 import (
 	"container/list"
 	"gopkg.in/gomail.v2"
@@ -11,6 +12,41 @@ import (
 )
 
 const sendmail = "/usr/sbin/sendmail"
+const bodyStart = `
+	<head>
+		<style>
+			body {
+				font-family: monospace;
+			}
+			ul {
+				font-weight: bold;
+				list-style-type: none;
+			}
+			li {
+				font-weight: lighter; 
+			}
+		</style>
+	</head>
+	<body>
+		<h2>
+			TENTO EMAIL BYL AUTOMATICKY VYGENEROVÁN / THIS IS EMAIL HAS BEEN AUTOMATICALLY GENERATED
+		</h2>
+		<h2>
+			NA TENTO EMAIL NEODPOVÍDEJTE / DO NOT REPLY TO THIS EMAIL
+		</h2>
+		<a>
+			Dobrý den,
+		</a><br><br>
+		<a>
+			Služba CTLog identifikovala vydání těchto nových certifikátů:
+		</a>
+`
+
+const bodyEnd = `
+	<a href="pki.cesnet.cz">O službě</a>
+	<img src="https://www.cesnet.cz/wp-content/uploads/2018/01/cesnet-malelogo.jpg
+</body>
+`
 
 // Use sendmail to send emails.
 func submitMail(m *gomail.Message) (err error) {
@@ -46,25 +82,23 @@ func submitMail(m *gomail.Message) (err error) {
 	return err
 }
 
-
-
 // Send out the certificate informations to the email monitoring them.
 func SendEmail(email string, certList *list.List) {
 	if email == "" {
 		return
 	}
-	
+
 	t := time.Now().Add(-24 * time.Hour)
 	date := strings.Join([]string{strconv.Itoa(t.Day()), strconv.Itoa(int(t.Month())), strconv.Itoa(t.Year())}, ".")
 
 	m := gomail.NewMessage()
 	m.SetHeader("From", "no-reply@cesnet.cz")
 	m.SetHeader("To", email)
-	m.SetHeader("Subject", "[CTLog] Nové certifikáty " + date)
+	m.SetHeader("Subject", "[CTLog] Nové certifikáty "+date)
 
 	var sb strings.Builder
 
-	sb.WriteString(emailConst)
+	sb.WriteString(bodyStart)
 
 	for cert := certList.Front(); cert != nil; cert = cert.Next() {
 		sb.WriteString("<ul>")
@@ -76,8 +110,6 @@ func SendEmail(email string, certList *list.List) {
 		sb.WriteString("</ul>")
 	}
 
-	sb.WriteString("<a href=\"pki.cesnet.cz\">O službě</a>")
-	sb.WriteString("<img src=\"https://www.cesnet.cz/wp-content/uploads/2018/01/cesnet-malelogo.jpg\"><br></body>")
 	m.SetBody("text/html", sb.String())
 
 	if err := submitMail(m); err != nil {

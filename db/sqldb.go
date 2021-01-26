@@ -9,10 +9,10 @@ import (
 )
 
 type CertInfo struct {
-	CN string
-	DN string
+	CN           string
+	DN           string
 	SerialNumber string
-	SAN string
+	SAN          string
 }
 
 type CTLogInfo struct {
@@ -22,36 +22,6 @@ type CTLogInfo struct {
 
 var emailRegex = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
 var domainRegex = regexp.MustCompile("^(([a-zA-Z]{1})|([a-zA-Z]{1}[a-zA-Z]{1})|([a-zA-Z]{1}[0-9]{1})|([0-9]{1}[a-zA-Z]{1})|([a-zA-Z0-9][a-zA-Z0-9-_]{1,61}[a-zA-Z0-9])).([a-zA-Z]{2,6}|[a-zA-Z0-9-]{2,30}.[a-zA-Z]{2,3})$")
-var emailConst = `
-	<head>
-		<style>
-			body {
-				font-family: monospace;
-			}
-			ul {
-				font-weight: bold;
-				list-style-type: none;
-			}
-			li {
-				font-weight: lighter; 
-			}
-		</style>
-	</head>
-	<body>
-		<h2>
-			TENTO EMAIL BYL AUTOMATICKY VYGENEROVÁN / THIS IS EMAIL HAS BEEN AUTOMATICALLY GENERATED
-		</h2>
-		<h2>
-			NA TENTO EMAIL NEODPOVÍDEJTE / DO NOT REPLY TO THIS EMAIL
-		</h2>
-		<a>
-			Dobrý den,
-		</a><br><br>
-		<a>
-			Služba CTLog identifikovala vydání těchto nových certifikátů:
-		</a>
-	</body>`
-
 
 // Creates a connection to the database and returns it.
 func ConnectToDatabase(database string) *sql.DB {
@@ -132,7 +102,11 @@ func GetLogIndex(url string, db *sql.DB) (int64, error) {
 
 // Find monitored certificates, create a map of email -> certificate attributes and send out emails
 func ParseDownloadedCertificates(db *sql.DB) {
-	//cesnet.cz should check: 'cesnet.cz', 'www.cesnet.cz', '*.cesnet.cz' and the SAN for '
+	//If we check cesnet.cz, we should check: 'cesnet.cz',
+	//										  'www.cesnet.cz',
+	//										  '*.cesnet.cz'
+	// and the SAN for '*\ncesnet.cz' and '*.cesnet.cz*'
+
 	query := `
 		SELECT DISTINCT Email, CN, DN, Serialnumber, SAN
 		FROM Downloaded
@@ -160,7 +134,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 		)
 
 		rows.Scan(&email, &CN, &DN, &serialnumber, &SAN)
-		// If key in map then...
+
 		if val, ok := certsForEmail[email]; ok {
 			val.PushBack(CertInfo{CN, DN, serialnumber, SAN})
 		} else {
@@ -169,7 +143,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 		}
 	}
 
-	log.Println("CERTS ARE IN MAP, INSERTING INTO DATABASE")
+	log.Println("CERTS ARE IN MAP, INSERTING INTO DATABASE AND SENDING OUT EMAILS")
 	for email, certList := range certsForEmail {
 		SendEmail(email, certList)
 
