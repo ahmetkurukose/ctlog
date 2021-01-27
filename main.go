@@ -97,11 +97,11 @@ func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error) {
 // Removes items from the inserter channel and inserts them into the database
 // Duplicates from multiple logs get ignored
 func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
-	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?, ?)")
+	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?, ?, ?, ?)")
 	defer q.Close()
 	count := 0
 	for name := range o {
-		_, err := q.Exec(name.CN, name.DN, name.SerialNumber, name.SAN)
+		_, err := q.Exec(name.CN, name.DN, name.SerialNumber, name.SAN, name.NotBefore, name.NotAfter)
 		if err != nil {
 			log.Printf("Failed saving cert with CN: %s\nDN: %s\nDNS: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.SAN, name.SerialNumber, err)
 		}
@@ -175,6 +175,8 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			DN:           cert.Subject.String(),
 			SerialNumber: cert.SerialNumber.Text(16),
 			SAN:          strings.Join(cert.DNSNames, "\n"),
+			NotBefore:    cert.NotBefore.String(),
+			NotAfter:     cert.NotAfter.String(),
 		}
 	}
 }

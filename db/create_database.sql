@@ -15,6 +15,8 @@ create table Certificate
     DN text not null,
     SerialNumber text not null,
     SAN int,
+    NotBefore text,
+    NotAfter text,
     constraint Certificate_pk
         primary key (CN, DN, SerialNumber)
 );
@@ -25,6 +27,8 @@ create table Downloaded
     DN text not null,
     SerialNumber text not null,
     SAN int,
+    NotBefore text,
+    NotAfter text,
     constraint Downloaded_pk
         primary key (CN, DN, SerialNumber)
 );

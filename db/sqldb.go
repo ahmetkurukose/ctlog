@@ -13,6 +13,8 @@ type CertInfo struct {
 	DN           string
 	SerialNumber string
 	SAN          string
+	NotBefore    string
+	NotAfter     string
 }
 
 type CTLogInfo struct {
@@ -108,7 +110,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 	// and the SAN for '*\ncesnet.cz' and '*.cesnet.cz*'
 
 	query := `
-		SELECT DISTINCT Email, CN, DN, Serialnumber, SAN
+		SELECT DISTINCT Email, CN, DN, SerialNumber, SAN, NotBefore, NotAfter
 		FROM Downloaded
         INNER JOIN Monitor M ON CN = M.Domain OR
                                 CN = 'www.' || M.Domain OR
@@ -131,15 +133,17 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			DN           string
 			serialnumber string
 			SAN          string
+			notBefore    string
+			notAfter     string
 		)
 
-		rows.Scan(&email, &CN, &DN, &serialnumber, &SAN)
+		rows.Scan(&email, &CN, &DN, &serialnumber, &SAN, notBefore, notAfter)
 
 		if val, ok := certsForEmail[email]; ok {
-			val.PushBack(CertInfo{CN, DN, serialnumber, SAN})
+			val.PushBack(CertInfo{CN, DN, serialnumber, SAN, notBefore, notAfter})
 		} else {
 			certsForEmail[email] = list.New()
-			certsForEmail[email].PushBack(CertInfo{CN, DN, serialnumber, SAN})
+			certsForEmail[email].PushBack(CertInfo{CN, DN, serialnumber, SAN, notBefore, notAfter})
 		}
 	}
 
@@ -149,7 +153,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 
 		for e := certList.Front(); e != nil; e = e.Next() {
 			cert := e.Value.(CertInfo)
-			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber, cert.SAN)
+			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?, ?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber, cert.SAN, cert.NotBefore, cert.NotAfter)
 		}
 	}
 }
