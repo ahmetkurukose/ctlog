@@ -3,8 +3,10 @@ package sqldb
 import (
 	"container/list"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
+	"os"
 	"regexp"
 )
 
@@ -15,6 +17,12 @@ type CertInfo struct {
 	SAN          string
 	NotBefore    string
 	NotAfter     string
+}
+
+type APIData struct {
+	SAN       string
+	NotBefore string
+	NotAfter  string
 }
 
 type CTLogInfo struct {
@@ -131,23 +139,23 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			email        string
 			CN           string
 			DN           string
-			serialnumber string
+			serialNumber string
 			SAN          string
 			notBefore    string
 			notAfter     string
 		)
 
-		rows.Scan(&email, &CN, &DN, &serialnumber, &SAN, notBefore, notAfter)
+		rows.Scan(&email, &CN, &DN, &serialNumber, &SAN, notBefore, notAfter)
 
 		if val, ok := certsForEmail[email]; ok {
-			val.PushBack(CertInfo{CN, DN, serialnumber, SAN, notBefore, notAfter})
+			val.PushBack(CertInfo{CN, DN, serialNumber, SAN, notBefore, notAfter})
 		} else {
 			certsForEmail[email] = list.New()
-			certsForEmail[email].PushBack(CertInfo{CN, DN, serialnumber, SAN, notBefore, notAfter})
+			certsForEmail[email].PushBack(CertInfo{CN, DN, serialNumber, SAN, notBefore, notAfter})
 		}
 	}
 
-	log.Println("CERTS ARE IN MAP, INSERTING INTO DATABASE AND SENDING OUT EMAILS")
+	log.Println("INSERTING INTO DATABASE AND SENDING OUT EMAILS")
 	for email, certList := range certsForEmail {
 		SendEmail(email, certList)
 
@@ -155,5 +163,66 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			cert := e.Value.(CertInfo)
 			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?, ?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber, cert.SAN, cert.NotBefore, cert.NotAfter)
 		}
+	}
+}
+
+func CreateDownloadedFile(dumpFile string, db *sql.DB) {
+	first := true
+
+	query := "SELECT SAN, NotBefore, NotAfter FROM Downloaded"
+	rows, err := db.Query(query)
+	if err != nil {
+		log.Printf("[-] Failed creating query for data dump -> %s\n", err)
+		return
+	}
+
+	file, err := os.OpenFile(dumpFile, os.O_TRUNC|os.O_WRONLY, 060)
+	if err != nil {
+		log.Println("")
+	}
+	defer file.Close()
+
+	if _, err := file.Write([]byte("[")); err != nil {
+		log.Printf("[-] Failed writing to file -> %s\n", err)
+	}
+
+	for rows.Next() {
+		var (
+			SAN       string
+			notBefore string
+			notAfter  string
+		)
+
+		err := rows.Scan(&SAN, &notBefore, &notAfter)
+
+		if err != nil {
+			log.Printf("[-] Failed retrieving data for data dump -> %s\n", err)
+		}
+
+		tmp, err := json.Marshal(APIData{
+			SAN:       SAN,
+			NotBefore: notBefore,
+			NotAfter:  notAfter,
+		})
+
+		if err != nil {
+			log.Printf("[-] Failed creating json -> %s\n", err)
+		}
+
+		if !first {
+			if _, err := file.Write([]byte(",")); err != nil {
+				log.Printf("[-] Failed writing to file -> %s\n", err)
+			}
+		}
+
+		if _, err := file.Write(tmp); err != nil {
+			log.Printf("[-] Failed writing to file -> %s\n", err)
+		}
+
+		first = false
+	}
+
+	if _, err := file.Write([]byte("]")); err != nil {
+		log.Printf("[-] Failed writing to file -> %s\n", err)
 	}
 }

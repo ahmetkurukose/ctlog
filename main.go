@@ -45,28 +45,11 @@ func usage() {
 	flag.PrintDefaults()
 }
 
-// For testing purposes.
-// Downloads and updates the database with new heads, used for reseting.
-func downloadAndUpdateHeads(db *sql.DB) error {
-	rows, err := db.Query("SELECT Url FROM CTLog")
-	if err != nil {
-		log.Fatal("[-] Failed to query logurls from database -> ", err, "\n")
+// For testing purposes, updates the log head index, reducing the amount of data to the minimum
+func updateHeads(logInfoMap *map[string]sqldb.CTLogInfo, db *sql.DB) {
+	for url, logInfo := range *logInfoMap {
+		db.Exec("UPDATE CTLog SET HeadIndex = ? WHERE Url = ?", logInfo.NewHeadIndex, url)
 	}
-	for rows.Next() {
-		var url string
-		err = rows.Scan(&url)
-		if err != nil {
-			return err
-		}
-
-		sth, err := DownloadSTH(url)
-		if err != nil {
-			return err
-		}
-		db.Exec("UPDATE CTLog SET HeadIndex = ? WHERE Url = ?", sth.TreeSize-1, url)
-	}
-
-	return nil
 }
 
 // Downloads the new STHs from the logs, returns a map of log url -> old and new index
@@ -181,10 +164,7 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 	}
 }
 
-func run(db *sql.DB) {
-	// FOR TESTING PURPOSES
-	//downloadAndUpdateHeads(db)
-
+func run(dumpFile string, db *sql.DB) {
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
 
@@ -192,6 +172,9 @@ func run(db *sql.DB) {
 	if err != nil {
 		log.Fatal("[-] Error while fetching logs, closing -> ", err)
 	}
+
+	// FOR TESTING PURPOSES
+	updateHeads(logInfos, db)
 
 	// Print the amounts to download from each log and then the sum
 	var all int64 = 0
@@ -253,7 +236,13 @@ func run(db *sql.DB) {
 	// Finished inserting, start working with the data
 	log.Println("FINISHED INSERTING")
 	sqldb.ParseDownloadedCertificates(db)
-	log.Println("FINISHED SENDING EMAILS, EXITING")
+	log.Println("FINISHED SENDING EMAILS")
+	if dumpFile != "" {
+		log.Println("CREATING FILE FOR API")
+		sqldb.CreateDownloadedFile(dumpFile, db)
+		log.Println("FILE CREATED")
+	}
+	log.Println("THE END")
 }
 
 func main() {
@@ -266,6 +255,7 @@ func main() {
 	norun := flag.Bool("norun", false, "Do not run the scan")
 	add := flag.String("add", "", "Add monitors, format: \"email domain1 domain2 ...\"")
 	remove := flag.String("remove", "", "Remove monitor, format: \"email domain\"")
+	dumpFile := flag.String("file", "", "Filename of the downloaded certificate dump file")
 
 	flag.Parse()
 
@@ -276,9 +266,6 @@ func main() {
 	db := sqldb.ConnectToDatabase(*database)
 	defer sqldb.CloseConnection(db)
 	sqldb.CleanupDownloadTable(db)
-
-	//Trying out routing
-	//doRouting(db)
 
 	// Create http client
 	CreateClient()
@@ -297,17 +284,26 @@ func main() {
 	if *remove != "" {
 		toRemove := strings.Split(*add, " ")
 		if len(toRemove) != 2 {
-			log.Printf("[-] Failed removing monitor, wrong number of arguments, check doublequotes")
+			log.Printf("[-] Incorrect remove monitor argument, wrong number of arguments, check doublequotes")
 		} else {
 			if err := sqldb.RemoveMonitors(toRemove[0], toRemove[1], db); err != nil {
-				log.Printf("[-] Failed removing monitors -> ", err)
+				log.Printf("[-] Failed removing monitors -> %s\n", err)
 			}
 		}
+	}
+
+	if *dumpFile != "" {
+		tmp, err := os.OpenFile(*dumpFile, os.O_CREATE, 0777)
+		if err != nil {
+			log.Printf("[-] Failed opening dump file -> %s\n", err)
+			return
+		}
+		tmp.Close()
 	}
 
 	if *norun {
 		log.Printf("NORUN")
 	} else {
-		run(db)
+		run(*dumpFile, db)
 	}
 }
