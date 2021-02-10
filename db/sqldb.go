@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	_ "github.com/jackc/pgx/v4/stdlib"
 	"log"
 	"os"
 	"regexp"
+	"time"
 )
 
 type CertInfo struct {
@@ -17,9 +19,11 @@ type CertInfo struct {
 	SAN          string
 	NotBefore    string
 	NotAfter     string
+	Issuer       string
 }
 
 type APIData struct {
+	CN        string
 	SAN       string
 	NotBefore string
 	NotAfter  string
@@ -35,8 +39,12 @@ var domainRegex = regexp.MustCompile("^(([a-zA-Z]{1})|([a-zA-Z]{1}[a-zA-Z]{1})|(
 
 // Creates a connection to the database and returns it.
 func ConnectToDatabase(database string) *sql.DB {
-	db, err := sql.Open("sqlite3", database)
+	db, err := sql.Open("pgx", database)
 	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err = db.Ping(); err != nil {
 		log.Fatal(err)
 	}
 	return db
@@ -77,7 +85,7 @@ func AddMonitors(email string, domains []string, db *sql.DB) error {
 	}
 
 	for i := range domains {
-		_, err := db.Exec("INSERT OR IGNORE INTO Monitor VALUES (?, ?)", email, domains[i])
+		_, err := db.Exec("INSERT INTO Monitor VALUES ($1, $2) ON CONFLICT DO NOTHING", email, domains[i])
 		if err != nil {
 			return err
 		}
@@ -96,14 +104,14 @@ func RemoveMonitors(email string, domain string, db *sql.DB) error {
 		return errors.New("Second argument is not a valid domain name")
 	}
 
-	_, err := db.Exec("DELETE FROM Monitor WHERE Email = ? AND Domain = ?", email, domain)
+	_, err := db.Exec("DELETE FROM Monitor WHERE Email = $1 AND Domain = $2", email, domain)
 
 	return err
 }
 
 // Returns previous head index of a log.
 func GetLogIndex(url string, db *sql.DB) (int64, error) {
-	row := db.QueryRow("SELECT HeadIndex FROM CTLog WHERE Url = ?", url)
+	row := db.QueryRow("SELECT HeadIndex FROM CTLog WHERE Url = $1", url)
 	var lastIndex int64
 	err := row.Scan(&lastIndex)
 
@@ -117,14 +125,15 @@ func ParseDownloadedCertificates(db *sql.DB) {
 	//										  '*.cesnet.cz'
 	// and the SAN for '*\ncesnet.cz' and '*.cesnet.cz*'
 
+	//INSTR -> POSITION
 	query := `
-		SELECT DISTINCT Email, CN, DN, SerialNumber, SAN, NotBefore, NotAfter
+		SELECT DISTINCT Email, CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
 		FROM Downloaded
         INNER JOIN Monitor M ON CN = M.Domain OR
                                 CN = 'www.' || M.Domain OR
                                 CN LIKE '%.' || M.Domain OR
                                 SAN LIKE '%\n' || M.Domain || '%' OR
-                                INSTR(SAN, '.' || M.Domain) > 0;`
+                                POSITION(SAN IN '.' || M.Domain) > 0;`
 
 	rows, err := db.Query(query)
 	if err != nil {
@@ -143,15 +152,16 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			SAN          string
 			notBefore    string
 			notAfter     string
+			issuer       string
 		)
 
 		rows.Scan(&email, &CN, &DN, &serialNumber, &SAN, notBefore, notAfter)
 
 		if val, ok := certsForEmail[email]; ok {
-			val.PushBack(CertInfo{CN, DN, serialNumber, SAN, notBefore, notAfter})
+			val.PushBack(CertInfo{CN, DN, serialNumber, SAN, notBefore, notAfter, issuer})
 		} else {
 			certsForEmail[email] = list.New()
-			certsForEmail[email].PushBack(CertInfo{CN, DN, serialNumber, SAN, notBefore, notAfter})
+			certsForEmail[email].PushBack(CertInfo{CN, DN, serialNumber, SAN, notBefore, notAfter, issuer})
 		}
 	}
 
@@ -161,7 +171,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 
 		for e := certList.Front(); e != nil; e = e.Next() {
 			cert := e.Value.(CertInfo)
-			db.Exec("INSERT OR IGNORE INTO Certificate VALUES (?, ?, ?, ?, ?, ?)", cert.CN, cert.DN, cert.SerialNumber, cert.SAN, cert.NotBefore, cert.NotAfter)
+			db.Exec("INSERT OR IGNORE INTO Certificate VALUES ($1, $2, $3, $4, $5, $6, $7)", cert.CN, cert.DN, cert.SerialNumber, cert.SAN, cert.NotBefore, cert.NotAfter, cert.Issuer)
 		}
 	}
 }
@@ -182,24 +192,28 @@ func CreateDownloadedFile(dumpFile string, db *sql.DB) {
 	}
 	defer file.Close()
 
-	if _, err := file.Write([]byte("[")); err != nil {
+	toWrite := "{ \"Created\": \"" + time.Now().Format("2.1.2006") + "\", \"data\" : ["
+
+	if _, err := file.Write([]byte(toWrite)); err != nil {
 		log.Printf("[-] Failed writing to file -> %s\n", err)
 	}
 
 	for rows.Next() {
 		var (
+			CN        string
 			SAN       string
 			notBefore string
 			notAfter  string
 		)
 
-		err := rows.Scan(&SAN, &notBefore, &notAfter)
+		err := rows.Scan(&CN, &SAN, &notBefore, &notAfter)
 
 		if err != nil {
 			log.Printf("[-] Failed retrieving data for data dump -> %s\n", err)
 		}
 
 		tmp, err := json.Marshal(APIData{
+			CN:        CN,
 			SAN:       SAN,
 			NotBefore: notBefore,
 			NotAfter:  notAfter,
@@ -222,7 +236,7 @@ func CreateDownloadedFile(dumpFile string, db *sql.DB) {
 		first = false
 	}
 
-	if _, err := file.Write([]byte("]")); err != nil {
+	if _, err := file.Write([]byte("]}")); err != nil {
 		log.Printf("[-] Failed writing to file -> %s\n", err)
 	}
 }

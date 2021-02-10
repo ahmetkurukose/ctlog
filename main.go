@@ -8,7 +8,6 @@ import (
 	"fmt"
 	ct_tls "github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/x509"
-	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"os"
 	"regexp"
@@ -17,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	//"github.com/go-martini/martini"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -48,7 +46,9 @@ func usage() {
 // For testing purposes, updates the log head index, reducing the amount of data to the minimum
 func updateHeads(logInfoMap *map[string]sqldb.CTLogInfo, db *sql.DB) {
 	for url, logInfo := range *logInfoMap {
-		db.Exec("UPDATE CTLog SET HeadIndex = ? WHERE Url = ?", logInfo.NewHeadIndex, url)
+		if _, err := db.Exec("UPDATE CTLog SET HeadIndex = $1 WHERE Url = $2", logInfo.NewHeadIndex, url); err != nil {
+			log.Printf("[-] Failed updating head -> %s\n", err)
+		}
 	}
 }
 
@@ -80,11 +80,11 @@ func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error) {
 // Removes items from the inserter channel and inserts them into the database
 // Duplicates from multiple logs get ignored
 func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
-	q, _ := db.Prepare("INSERT OR IGNORE INTO Downloaded VALUES (?, ?, ?, ?, ?, ?)")
+	q, _ := db.Prepare("INSERT INTO Downloaded VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING ")
 	defer q.Close()
 	count := 0
 	for name := range o {
-		_, err := q.Exec(name.CN, name.DN, name.SerialNumber, name.SAN, name.NotBefore, name.NotAfter)
+		_, err := q.Exec(name.CN, name.DN, name.SerialNumber, name.SAN, name.NotBefore, name.NotAfter, name.Issuer)
 		if err != nil {
 			log.Printf("Failed saving cert with CN: %s\nDN: %s\nDNS: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.SAN, name.SerialNumber, err)
 		}
@@ -160,6 +160,7 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			SAN:          strings.Join(cert.DNSNames, "\n"),
 			NotBefore:    cert.NotBefore.String(),
 			NotAfter:     cert.NotAfter.String(),
+			Issuer:       cert.Issuer.String(),
 		}
 	}
 }
@@ -207,8 +208,8 @@ func run(dumpFile string, db *sql.DB) {
 
 	// Start queueing downloads for each log
 	for url, headInfo := range *logInfos {
-		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, DOWNLOADER_COUNT, url, c_parse, db)
 		Wg.Add(1)
+		go distributeWork(headInfo.OldHeadIndex, headInfo.NewHeadIndex, DOWNLOADER_COUNT, url, c_parse, db)
 	}
 
 	// Wait for work distributors
