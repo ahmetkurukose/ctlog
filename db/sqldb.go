@@ -179,7 +179,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 func CreateDownloadedFile(dumpFile string, db *sql.DB) {
 	first := true
 
-	query := "SELECT SAN, NotBefore, NotAfter FROM Downloaded"
+	query := "SELECT CN, SAN, NotBefore, NotAfter FROM Downloaded"
 	rows, err := db.Query(query)
 	if err != nil {
 		log.Printf("[-] Failed creating query for data dump -> %s\n", err)
