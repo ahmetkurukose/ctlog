@@ -127,13 +127,12 @@ func ParseDownloadedCertificates(db *sql.DB) {
 
 	//INSTR -> POSITION
 	query := `
-		SELECT DISTINCT Email, CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
+SELECT DISTINCT Email, CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
 		FROM Downloaded
-        INNER JOIN Monitor M ON CN = M.Domain OR
-                                CN = 'www.' || M.Domain OR
-                                CN LIKE '%.' || M.Domain OR
-                                SAN LIKE '%\n' || M.Domain || '%' OR
-                                POSITION(SAN IN '.' || M.Domain) > 0;`
+        INNER JOIN Monitor M ON CN = concat('www.', M.Domain) OR
+                                CN LIKE concat('%.', M.Domain) OR
+                                SAN LIKE concat(E'\n', M.Domain, '%') OR
+                                position(concat('.', M.Domain) IN SAN) > 0;`
 
 	rows, err := db.Query(query)
 	if err != nil {
