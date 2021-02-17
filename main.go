@@ -29,7 +29,6 @@ var outputCount int64 = 0
 var inputCount int64 = 0
 var startTime time.Time
 
-const INSERTER_COUNT = 4
 const INSERT_BUFFER_SIZE = 10000
 const DOWNLOADER_COUNT = 65
 const PARSE_BUFFER_SIZE = 1000
@@ -200,11 +199,9 @@ func run(dumpFile string, db *sql.DB) {
 	}
 	Wp.Add(PARSER_COUNT)
 
-	// Launch a single output writer
-	for i := 0; i < INSERTER_COUNT; i++ {
-		go inserter(c_insert, db)
-	}
-	Wo.Add(INSERTER_COUNT)
+	// Launch a database inserter
+	go inserter(c_insert, db)
+	Wo.Add(1)
 
 	// Start timer for download
 	startTime = time.Now()
