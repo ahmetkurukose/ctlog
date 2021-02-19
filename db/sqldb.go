@@ -155,7 +155,7 @@ SELECT DISTINCT Email, CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
 			issuer       string
 		)
 
-		rows.Scan(&email, &CN, &DN, &serialNumber, &SAN, notBefore, notAfter)
+		rows.Scan(&email, &CN, &DN, &serialNumber, &SAN, &notBefore, &notAfter, &issuer)
 
 		if val, ok := certsForEmail[email]; ok {
 			val.PushBack(CertInfo{CN, DN, serialNumber, SAN, notBefore, notAfter, issuer})
