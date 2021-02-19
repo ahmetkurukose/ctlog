@@ -5,26 +5,18 @@ Program, that sends emails to users regarding new certificates issued to their d
 Easiest way to install is to run `go get github.com/AdamTrn/ctlog`
 ### Requirements
 - Go 15.3
-- SQLite3
+- PostgreSQL
 
-To download the dependencies run:
+To download the Go dependencies run:
 
 `go get -d path-to-ctlog/...`
 
 (... is a `go` wildcard when describing package lists)
 
-The program requires a database, currently it is running on SQLite.
-To create the database run these commands:
-```
-sqlite3 path-to-ctlog/db/certdb.sqlite
-.read create_database.sql
-.quit
-```
-
 ## Usage
 ### Parameters
 - `-logurl url` - used when we only want to scan one log
-- `-db path` - path to SQLite3 database
+- `-db "parameters"` - parameters of the PostgreSQL connection
 - `-add "email domain1 domain2..."` - add monitor to domain, has to be surrounded by double quotes
 - `-remove "email domain"` - remove monitor, has to be surrounded by double quotes
 
@@ -48,32 +40,22 @@ We send the downloaded certificates to the parsing channel, from which the parse
 # CTlog
 Program, který upozorňuje uživatele na vydané certifikáty pro jejich domény a na certifikáty, které by mohly být použity pro MITM útoky.
 
-## Instalation
 ## Instalace
-Nejjednošší způsob instalace je pomocí `go get github.com/AdamTrn/ctlog`
+Nejjednodušší způsob instalace je pomocí `go get github.com/AdamTrn/ctlog`
 
-### Requirements
 ### Požadavky
 - Go 15.3
-- SQLite3
+- PostgreSQL
 
 Pro stažení závislostí:
 `go get -d path-to-ctlog/...`
 
 (`...` je pro `go get` wildcard)
 
-Program vyžaduje databázi, byla zvolena SQLite3.
-Pro vytvoření databáze:
-```
-sqlite3 path-to-ctlog/db/certdb.sqlite
-.read create_database.sql
-.quit
-```
-
 ## Použití
 ### Argumenty
 - `-logurl url` - kontrola jen jednoho logu
-- `-db path` - cesta k SQLite3 databázi
+- `-db "parameters"` - parametry připojení k databázi
 - `-add "email domain1 domain2..."` - přidání monitoru do databáze, musí být v uvozovkách
 - `-remove "email domain"` - odebrání monitoru, musí být v uvozovkách
 

@@ -142,6 +142,7 @@ SELECT DISTINCT Email, CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
 
 	certsForEmail := make(map[string]*list.List)
 
+	count := 0
 	for rows.Next() {
 		var (
 			email        string
@@ -162,8 +163,11 @@ SELECT DISTINCT Email, CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
 			certsForEmail[email] = list.New()
 			certsForEmail[email].PushBack(CertInfo{CN, DN, serialNumber, SAN, notBefore, notAfter, issuer})
 		}
+
+		count++
 	}
 
+	log.Println("FOUND ", count, " CERTIFICATES")
 	log.Println("INSERTING INTO DATABASE AND SENDING OUT EMAILS")
 	for email, certList := range certsForEmail {
 		SendEmail(email, certList)

@@ -175,7 +175,7 @@ func run(dumpFile string, db *sql.DB) {
 	}
 
 	// FOR TESTING PURPOSES
-	updateHeads(logInfos, db)
+	//updateHeads(logInfos, db)
 
 	// Print the amounts to download from each log and then the sum
 	var all int64 = 0
