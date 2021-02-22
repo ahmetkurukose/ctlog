@@ -176,7 +176,7 @@ SELECT DISTINCT Email, CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
 
 		for e := certList.Front(); e != nil; e = e.Next() {
 			cert := e.Value.(CertInfo)
-			db.Exec("INSERT OR IGNORE INTO Certificate VALUES ($1, $2, $3, $4, $5, $6, $7)", cert.CN, cert.DN, cert.SerialNumber, cert.SAN, cert.NotBefore, cert.NotAfter, cert.Issuer)
+			db.Exec("INSERT INTO Certificate VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING", cert.CN, cert.DN, cert.SerialNumber, cert.SAN, cert.NotBefore, cert.NotAfter, cert.Issuer)
 		}
 	}
 }
