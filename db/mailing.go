@@ -1,7 +1,6 @@
 package sqldb
 
 import (
-	"container/list"
 	"gopkg.in/gomail.v2"
 	"log"
 	"os"
@@ -83,8 +82,8 @@ func submitMail(m *gomail.Message) (err error) {
 }
 
 // Send out the certificate informations to the email monitoring them.
-func SendEmail(email string, certList *list.List) {
-	if email == "" {
+func SendEmail(info MonitoredCerts) {
+	if info.Email == "" {
 		return
 	}
 
@@ -93,16 +92,15 @@ func SendEmail(email string, certList *list.List) {
 
 	m := gomail.NewMessage()
 	m.SetHeader("From", "no-reply@cesnet.cz")
-	m.SetHeader("To", email)
+	m.SetHeader("To", info.Email)
 	m.SetHeader("Subject", "[CTLog] Nové certifikáty "+date)
 
 	var sb strings.Builder
 
 	sb.WriteString(bodyStart)
 
-	for cert := certList.Front(); cert != nil; cert = cert.Next() {
+	for _, cur := range info.Certificates {
 		sb.WriteString("<ul>")
-		cur := cert.Value.(CertInfo)
 		sb.WriteString(cur.CN)
 		sb.WriteString("<li>Subject DN: " + cur.DN + "</li>" +
 			"<li>Serial: " + cur.SerialNumber + "</li>" +
@@ -113,6 +111,6 @@ func SendEmail(email string, certList *list.List) {
 	m.SetBody("text/html", sb.String())
 
 	if err := submitMail(m); err != nil {
-		log.Printf("[-] Failed sending email to %s -> %s", email, err)
+		log.Printf("[-] Failed sending email to %s -> %s", info.Email, err)
 	}
 }

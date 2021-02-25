@@ -1,7 +1,6 @@
 package sqldb
 
 import (
-	"container/list"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,11 @@ import (
 	"regexp"
 	"time"
 )
+
+type MonitoredCerts struct {
+	Email        string     `json:"email"`
+	Certificates []CertInfo `json:"certs"`
+}
 
 type CertInfo struct {
 	CN           string
@@ -120,64 +124,59 @@ func GetLogIndex(url string, db *sql.DB) (int64, error) {
 
 // Find monitored certificates, create a map of email -> certificate attributes and send out emails
 func ParseDownloadedCertificates(db *sql.DB) {
-	//If we check cesnet.cz, we should check: 'cesnet.cz',
-	//										  'www.cesnet.cz',
-	//										  '*.cesnet.cz'
-	// and the SAN for '*\ncesnet.cz' and '*.cesnet.cz*'
-
-	//INSTR -> POSITION
-	query := `
-SELECT DISTINCT Email, CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
+	rows, err := db.Query(`
+	WITH CERTS AS (
+		INSERT INTO Certificate
+		SELECT CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
 		FROM Downloaded
-        INNER JOIN Monitor M ON CN = concat('www.', M.Domain) OR
-                                CN LIKE concat('%.', M.Domain) OR
-                                SAN LIKE concat(E'\n', M.Domain, '%') OR
-                                position(concat('.', M.Domain) IN SAN) > 0;`
+		INNER JOIN Monitor M ON CN = M.Domain OR
+			CN = concat('www.', M.Domain) OR
+			CN LIKE concat('%.', M.Domain) OR
+			SAN LIKE concat(E'\n', M.Domain, '%') OR
+			position(concat('.', M.Domain) IN SAN) > 0
+		ON CONFLICT DO NOTHING
+		RETURNING CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
+	)
 
-	rows, err := db.Query(query)
+	SELECT json_build_object(
+		'email', Email,
+		'certs', json_agg(CERTS.*)
+	)
+	FROM CERTS
+	INNER JOIN Monitor M ON CN = M.Domain OR
+		CN = concat('www.', M.Domain) OR
+		CN LIKE concat('%.', M.Domain) OR
+		SAN LIKE concat(E'\n', M.Domain, '%') OR
+		position(concat('.', M.Domain) IN SAN) > 0
+	GROUP BY Email;`)
+
 	if err != nil {
-		log.Printf("[-] Error while parsing downloaded certificates -> %s\n", err)
+		log.Fatal(err.Error())
 	}
 	defer rows.Close()
 
-	certsForEmail := make(map[string]*list.List)
-
-	count := 0
+	var results []MonitoredCerts
 	for rows.Next() {
-		var (
-			email        string
-			CN           string
-			DN           string
-			serialNumber string
-			SAN          string
-			notBefore    string
-			notAfter     string
-			issuer       string
-		)
-
-		if err = rows.Scan(&email, &CN, &DN, &serialNumber, &SAN, &notBefore, &notAfter, &issuer); err != nil {
-			log.Printf("[-] Failed scanning rows from Downloaded -> %s\n", err)
+		var res MonitoredCerts
+		var tmp []byte
+		err = rows.Scan(&tmp)
+		if err != nil {
+			log.Fatal(err)
 		}
 
-		if val, ok := certsForEmail[email]; ok {
-			val.PushBack(CertInfo{CN, DN, serialNumber, SAN, notBefore, notAfter, issuer})
-		} else {
-			certsForEmail[email] = list.New()
-			certsForEmail[email].PushBack(CertInfo{CN, DN, serialNumber, SAN, notBefore, notAfter, issuer})
+		err := json.Unmarshal(tmp, &res)
+		if err != nil {
+			log.Fatal(err)
 		}
 
-		count++
+		println(res.Email)
+
+		results = append(results, res)
 	}
 
-	log.Println("FOUND ", count, " CERTIFICATES")
 	log.Println("INSERTING INTO DATABASE AND SENDING OUT EMAILS")
-	for email, certList := range certsForEmail {
-		SendEmail(email, certList)
-
-		for e := certList.Front(); e != nil; e = e.Next() {
-			cert := e.Value.(CertInfo)
-			db.Exec("INSERT INTO Certificate VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING", cert.CN, cert.DN, cert.SerialNumber, cert.SAN, cert.NotBefore, cert.NotAfter, cert.Issuer)
-		}
+	for _, r := range results {
+		SendEmail(r)
 	}
 }
 
