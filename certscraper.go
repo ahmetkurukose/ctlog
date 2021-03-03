@@ -113,8 +113,8 @@ func DownloadSTH(logurl string) (CTHead, error) {
 }
 
 // Updates head index.
-func UpdateLogIndex(index int64, logurl string, db *sql.DB) {
-	_, err := db.Exec("UPDATE CTLog SET HeadIndex = $1 WHERE url = $2", index, logurl)
+func saveLogIndex(index int64, logurl string, db *sql.DB) {
+	_, err := db.Exec("UPDATE TmpCTLog SET HeadIndex = $1 WHERE Url = $2", index, logurl)
 	if err != nil {
 		log.Printf("[-] Failed to update head index of log %s -> %s\n", logurl, err)
 		return
@@ -192,5 +192,6 @@ func distributeWork(previousIndex int64, newIndex int64, downloaderCount int64, 
 		Wd.Add(1)
 	}
 
-	UpdateLogIndex(newIndex, logurl, db)
+	//TODO: only update if ran succesfully, using rollback??
+	saveLogIndex(newIndex, logurl, db)
 }

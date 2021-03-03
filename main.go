@@ -175,7 +175,7 @@ func run(dumpFile string, db *sql.DB) {
 	}
 
 	// FOR TESTING PURPOSES
-	//updateHeads(logInfos, db)
+	updateHeads(logInfos, db)
 
 	// Print the amounts to download from each log and then the sum
 	var all int64 = 0
@@ -184,6 +184,8 @@ func run(dumpFile string, db *sql.DB) {
 		fmt.Printf("%sct/v1/get-entries?start=%d&end=%d      %d\n", u, i.OldHeadIndex, i.NewHeadIndex, i.NewHeadIndex-i.OldHeadIndex)
 	}
 	println("TO DOWNLOAD: ", all)
+
+	sqldb.CreateTempLogTable(db)
 
 	// Create channels
 
@@ -247,6 +249,7 @@ func run(dumpFile string, db *sql.DB) {
 		sqldb.CreateDownloadedFile(dumpFile, db)
 		log.Println("FILE CREATED")
 	}
+	sqldb.UpdateLogIndexes(db)
 	log.Println("THE END")
 }
 

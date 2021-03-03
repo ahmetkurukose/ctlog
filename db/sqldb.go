@@ -113,13 +113,24 @@ func RemoveMonitors(email string, domain string, db *sql.DB) error {
 	return err
 }
 
-// Returns previous head index of a log.
-func GetLogIndex(url string, db *sql.DB) (int64, error) {
-	row := db.QueryRow("SELECT HeadIndex FROM CTLog WHERE Url = $1", url)
-	var lastIndex int64
-	err := row.Scan(&lastIndex)
+// Create a temporary table to save new CT log head indexes, so we can reroll in case of an error
+func CreateTempLogTable(db *sql.DB) {
+	_, err := db.Exec("SELECT * INTO TmpCTLog FROM CTLog")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+}
 
-	return lastIndex, err
+// No error occurred during the program running, update the logs
+func UpdateLogIndexes(db *sql.DB) {
+	_, err := db.Exec("DROP TABLE CTLog")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	_, err = db.Exec("ALTER TABLE TmpCTLog RENAME TO CTLog")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 }
 
 // Find monitored certificates, create a map of email -> certificate attributes and send out emails
