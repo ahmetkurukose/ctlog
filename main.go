@@ -30,7 +30,7 @@ var inputCount int64 = 0
 var startTime time.Time
 
 const INSERT_BUFFER_SIZE = 10000
-const DOWNLOADER_COUNT = 65
+const DOWNLOADER_COUNT = 50
 const PARSE_BUFFER_SIZE = 1000
 const PARSER_COUNT = 4
 
@@ -175,7 +175,7 @@ func run(dumpFile string, db *sql.DB) {
 	}
 
 	// FOR TESTING PURPOSES
-	updateHeads(logInfos, db)
+	//updateHeads(logInfos, db)
 
 	// Print the amounts to download from each log and then the sum
 	var all int64 = 0
