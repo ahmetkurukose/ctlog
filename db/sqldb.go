@@ -115,7 +115,13 @@ func RemoveMonitors(email string, domain string, db *sql.DB) error {
 
 // Create a temporary table to save new CT log head indexes, so we can reroll in case of an error
 func CreateTempLogTable(db *sql.DB) {
-	_, err := db.Exec("SELECT * INTO TmpCTLog FROM CTLog")
+	// delete the table if it's still here from the last run
+	_, err := db.Exec("DROP TABLE IF EXISTS TMPCtlog")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+
+	_, err = db.Exec("SELECT * INTO TmpCTLog FROM CTLog")
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -138,7 +144,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 	rows, err := db.Query(`
 	WITH CERTS AS (
 		INSERT INTO Certificate
-		SELECT CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
+		SELECT DISTINCT CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
 		FROM Downloaded
 		INNER JOIN Monitor M ON CN = M.Domain OR
 			CN = concat('www.', M.Domain) OR
