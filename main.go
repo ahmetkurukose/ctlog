@@ -37,7 +37,7 @@ const PARSER_COUNT = 4
 func usage() {
 	fmt.Println("Usage: " + os.Args[0] + " [options]")
 	fmt.Println("")
-	fmt.Println("Synchronizes data from one or more CT logs and extract hostnames")
+	fmt.Println("Downloads certificates from certificate transparency logs and filters them")
 	fmt.Println("")
 	fmt.Println("Options:")
 	flag.PrintDefaults()
