@@ -141,8 +141,10 @@ func UpdateLogIndexes(db *sql.DB) {
 
 // Find monitored certificates, create a map of email -> certificate attributes and send out emails
 func ParseDownloadedCertificates(db *sql.DB) {
+	// Super ugly, but it is the only way to remove duplicates after the join I've found
 	rows, err := db.Query(`
-	WITH CERTS AS (
+	WITH
+	INSERTED AS (
 		INSERT INTO Certificate
 		SELECT DISTINCT CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
 		FROM Downloaded
@@ -153,19 +155,21 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			position(concat('.', M.Domain) IN SAN) > 0
 		ON CONFLICT DO NOTHING
 		RETURNING CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
+	),
+	CERTS AS(
+		SELECT DISTINCT CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer, Email
+		FROM INSERTED
+		INNER JOIN Monitor M ON CN = M.Domain OR
+			CN = concat('www.', M.Domain) OR
+			CN LIKE concat('%.', M.Domain) OR
+			SAN LIKE concat(E'\n', M.Domain, '%') OR
+			position(concat('.', M.Domain) IN SAN) > 0
 	)
-
-	SELECT json_build_object(
-		'email', Email,
-		'certs', json_agg(CERTS.*)
-	)
+	
+	SELECT Email, json_agg(CERTS.*)
 	FROM CERTS
-	INNER JOIN Monitor M ON CN = M.Domain OR
-		CN = concat('www.', M.Domain) OR
-		CN LIKE concat('%.', M.Domain) OR
-		SAN LIKE concat(E'\n', M.Domain, '%') OR
-		position(concat('.', M.Domain) IN SAN) > 0
-	GROUP BY Email;`)
+	GROUP BY Email;
+	`)
 
 	if err != nil {
 		log.Fatal(err.Error())
