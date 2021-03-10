@@ -179,6 +179,7 @@ func ParseDownloadedCertificates(db *sql.DB) {
 	defer rows.Close()
 
 	var results []MonitoredCerts
+	count := 0
 	for rows.Next() {
 		var res MonitoredCerts
 		var tmp []byte
@@ -192,12 +193,12 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			log.Fatal(err)
 		}
 
-		println(res.Email)
-
+		count += len(res.Certificates)
 		results = append(results, res)
 	}
 
-	log.Println("INSERTING INTO DATABASE AND SENDING OUT EMAILS")
+	log.Println("FOUND ", count, " CERTIFICATES")
+	log.Println("SENDING EMAILS")
 	for _, r := range results {
 		SendEmail(r)
 	}
