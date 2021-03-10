@@ -166,7 +166,9 @@ func ParseDownloadedCertificates(db *sql.DB) {
 			position(concat('.', M.Domain) IN SAN) > 0
 	)
 	
-	SELECT Email, json_agg(CERTS.*)
+	SELECT json_build_object(
+		'email', Email,
+		'certs', json_agg(CERTS.*))
 	FROM CERTS
 	GROUP BY Email;
 	`)
