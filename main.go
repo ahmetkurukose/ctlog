@@ -171,7 +171,16 @@ func run(dumpFile string, db *sql.DB) {
 
 	logInfos, err = downloadHeads(db)
 	if err != nil {
-		log.Fatal("[-] Error while fetching logs, closing -> ", err)
+		// Try to recover
+		sec := 0
+		for err != nil {
+			time.Sleep(time.Duration(sec) * time.Second)
+			logInfos, err = downloadHeads(db)
+			sec += 1
+			if sec == 30 {
+				log.Fatal("[-] Timed out while downloading heads")
+			}
+		}
 	}
 
 	// FOR TESTING PURPOSES
@@ -242,13 +251,16 @@ func run(dumpFile string, db *sql.DB) {
 	insertTimeLength := time.Now().Sub(startTime).Hours()
 	log.Println("THROUGHPUT: ", float64(inputCount)/insertTimeLength)
 
-	sqldb.ParseDownloadedCertificates(db)
-	log.Println("FINISHED SENDING EMAILS")
 	if dumpFile != "" {
 		log.Println("CREATING FILE FOR API")
 		sqldb.CreateDownloadedFile(dumpFile, db)
 		log.Println("FILE CREATED")
 	}
+
+	log.Println("PARSING")
+	sqldb.ParseDownloadedCertificates(db)
+	log.Println("FINISHED SENDING EMAILS")
+
 	sqldb.UpdateLogIndexes(db)
 	log.Println("THE END")
 }
