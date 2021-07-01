@@ -153,31 +153,37 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 		// Valid input
 		atomic.AddInt64(&inputCount, 1)
 
+		san := ""
+		if len(cert.DNSNames) > 0 {
+			san = strings.Join(cert.DNSNames, ",")
+			san += ","
+		}
+
 		o <- sqldb.CertInfo{
 			CN:           cert.Subject.CommonName,
 			DN:           cert.Subject.String(),
 			SerialNumber: cert.SerialNumber.Text(16),
-			SAN:          strings.Join(cert.DNSNames, "\n"),
-			NotBefore:    cert.NotBefore.String(),
-			NotAfter:     cert.NotAfter.String(),
+			SAN:          san,
+			NotBefore:    cert.NotBefore.Format("2006-01-02 15:04:05"),
+			NotAfter:     cert.NotAfter.Format("2006-01-02 15:04:05"),
 			Issuer:       cert.Issuer.String(),
 		}
 	}
 }
 
-func run(dumpFile string, db *sql.DB) {
+func run(dumpFile bool, db *sql.DB) {
 	var logInfos *map[string]sqldb.CTLogInfo
 	var err error
 
 	logInfos, err = downloadHeads(db)
 	if err != nil {
 		// Try to recover
-		sec := 0
+		sec := 1
 		for err != nil {
 			time.Sleep(time.Duration(sec) * time.Second)
 			logInfos, err = downloadHeads(db)
 			sec += 1
-			if sec == 30 {
+			if sec == 50 {
 				log.Fatal("[-] Timed out while downloading heads")
 			}
 		}
@@ -251,9 +257,9 @@ func run(dumpFile string, db *sql.DB) {
 	insertTimeLength := time.Now().Sub(startTime).Hours()
 	log.Println("THROUGHPUT: ", float64(inputCount)/insertTimeLength)
 
-	if dumpFile != "" {
+	if dumpFile {
 		log.Println("CREATING FILE FOR API")
-		sqldb.CreateDownloadedFile(dumpFile, db)
+		sqldb.CreateDownloadedFile(db)
 		log.Println("FILE CREATED")
 	}
 
@@ -262,6 +268,7 @@ func run(dumpFile string, db *sql.DB) {
 	log.Println("FINISHED SENDING EMAILS")
 
 	sqldb.UpdateLogIndexes(db)
+	sqldb.DeleteExpiredCertificates(db)
 	log.Println("THE END")
 }
 
@@ -273,9 +280,7 @@ func main() {
 	flag.Usage = func() { usage() }
 	database := flag.String("db", "", "REQUIRED, path to database")
 	norun := flag.Bool("norun", false, "Do not run the scan")
-	add := flag.String("add", "", "Add monitors, format: \"email domain1 domain2 ...\"")
-	remove := flag.String("remove", "", "Remove monitor, format: \"email domain\"")
-	dumpFile := flag.String("file", "", "Filename of the downloaded certificate dump file")
+	dumpFile := flag.Bool("dump", false, "Dump the downloaded certificate to a dump file")
 
 	flag.Parse()
 
@@ -289,37 +294,6 @@ func main() {
 
 	// Create http client
 	CreateClient()
-
-	if *add != "" {
-		toAdd := strings.Split(*add, " ")
-		if len(toAdd) < 2 {
-			log.Printf("[-] Failed adding monitor, wrong number of arguments, check doublequotes")
-		} else {
-			if err := sqldb.AddMonitors(toAdd[0], toAdd[1:], db); err != nil {
-				log.Printf("[-] Failed adding monitors -> ", err)
-			}
-		}
-	}
-
-	if *remove != "" {
-		toRemove := strings.Split(*add, " ")
-		if len(toRemove) != 2 {
-			log.Printf("[-] Incorrect remove monitor argument, wrong number of arguments, check doublequotes")
-		} else {
-			if err := sqldb.RemoveMonitors(toRemove[0], toRemove[1], db); err != nil {
-				log.Printf("[-] Failed removing monitors -> %s\n", err)
-			}
-		}
-	}
-
-	if *dumpFile != "" {
-		tmp, err := os.OpenFile(*dumpFile, os.O_CREATE, 0777)
-		if err != nil {
-			log.Printf("[-] Failed opening dump file -> %s\n", err)
-			return
-		}
-		tmp.Close()
-	}
 
 	if *norun {
 		log.Printf("NORUN")

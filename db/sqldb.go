@@ -3,11 +3,11 @@ package sqldb
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	_ "github.com/jackc/pgx/v4/stdlib"
 	"log"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -28,7 +28,7 @@ type CertInfo struct {
 
 type APIData struct {
 	CN        string
-	SAN       string
+	SAN       []string
 	NotBefore string
 	NotAfter  string
 }
@@ -76,43 +76,6 @@ func isDomainValid(d string) bool {
 	return domainRegex.MatchString(d)
 }
 
-// Add monitors to the database
-func AddMonitors(email string, domains []string, db *sql.DB) error {
-	if !isEmailValid(email) {
-		return errors.New("First argument is not an email address")
-	}
-
-	for i := range domains {
-		if !isDomainValid(domains[i]) {
-			return errors.New("One of the domains is not a valid domain name")
-		}
-	}
-
-	for i := range domains {
-		_, err := db.Exec("INSERT INTO Monitor VALUES ($1, $2) ON CONFLICT DO NOTHING", email, domains[i])
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// Remove monitor from the database
-func RemoveMonitors(email string, domain string, db *sql.DB) error {
-	if !isEmailValid(email) {
-		return errors.New("First argument is not an email address")
-	}
-
-	if !isDomainValid(domain) {
-		return errors.New("Second argument is not a valid domain name")
-	}
-
-	_, err := db.Exec("DELETE FROM Monitor WHERE Email = $1 AND Domain = $2", email, domain)
-
-	return err
-}
-
 // Create a temporary table to save new CT log head indexes, so we can reroll in case of an error
 func CreateTempLogTable(db *sql.DB) {
 	// delete the table if it's still here from the last run
@@ -151,18 +114,18 @@ func ParseDownloadedCertificates(db *sql.DB) {
 		INNER JOIN Monitor M ON CN = M.Domain OR
 			CN = concat('www.', M.Domain) OR
 			CN LIKE concat('%.', M.Domain) OR
-			SAN LIKE concat(E'\n', M.Domain, '%') OR
+			SAN LIKE concat(',', M.Domain, '%') OR
 			position(concat('.', M.Domain) IN SAN) > 0
 		ON CONFLICT DO NOTHING
 		RETURNING CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer
 	),
-	CERTS AS(
+	CERTS AS (
 		SELECT DISTINCT CN, DN, SerialNumber, SAN, NotBefore, NotAfter, Issuer, Email
 		FROM INSERTED
 		INNER JOIN Monitor M ON CN = M.Domain OR
 			CN = concat('www.', M.Domain) OR
 			CN LIKE concat('%.', M.Domain) OR
-			SAN LIKE concat(E'\n', M.Domain, '%') OR
+			SAN LIKE concat(',', M.Domain, '%') OR
 			position(concat('.', M.Domain) IN SAN) > 0
 	)
 	
@@ -204,27 +167,30 @@ func ParseDownloadedCertificates(db *sql.DB) {
 	}
 }
 
-func CreateDownloadedFile(dumpFile string, db *sql.DB) {
-	first := true
+func CreateDownloadedFile(db *sql.DB) {
+	fname := "/var/www/html/" + time.Now().Format("02_01_06") + ".jsonl"
 
-	query := "SELECT CN, SAN, NotBefore, NotAfter FROM Downloaded"
+	// Create file
+	tmp, err := os.OpenFile(fname, os.O_CREATE, 0777)
+	if err != nil {
+		log.Printf("[-] Failed opening dump file -> %s\n", err)
+		return
+	}
+	tmp.Close()
+
+	query := "SELECT DISTINCT CN, SAN, NotBefore, NotAfter FROM Downloaded WHERE CN!='' OR SAN!=''"
 	rows, err := db.Query(query)
 	if err != nil {
 		log.Printf("[-] Failed creating query for data dump -> %s\n", err)
 		return
 	}
 
-	file, err := os.OpenFile(dumpFile, os.O_TRUNC|os.O_WRONLY, 060)
+	file, err := os.OpenFile(fname, os.O_TRUNC|os.O_WRONLY, 060)
 	if err != nil {
-		log.Println("")
+		log.Printf("[-] Failed opening file for writing -> %s\n", err)
+		return
 	}
 	defer file.Close()
-
-	toWrite := "{ \"Created\": \"" + time.Now().Format("2.1.2006") + "\", \"data\" : ["
-
-	if _, err := file.Write([]byte(toWrite)); err != nil {
-		log.Printf("[-] Failed writing to file -> %s\n", err)
-	}
 
 	for rows.Next() {
 		var (
@@ -238,11 +204,14 @@ func CreateDownloadedFile(dumpFile string, db *sql.DB) {
 
 		if err != nil {
 			log.Printf("[-] Failed retrieving data for data dump -> %s\n", err)
+			continue
 		}
+
+		sanArr := strings.Split(strings.TrimSuffix(SAN, ","), ",")
 
 		tmp, err := json.Marshal(APIData{
 			CN:        CN,
-			SAN:       SAN,
+			SAN:       sanArr,
 			NotBefore: notBefore,
 			NotAfter:  notAfter,
 		})
@@ -251,20 +220,16 @@ func CreateDownloadedFile(dumpFile string, db *sql.DB) {
 			log.Printf("[-] Failed creating json -> %s\n", err)
 		}
 
-		if !first {
-			if _, err := file.Write([]byte(",")); err != nil {
-				log.Printf("[-] Failed writing to file -> %s\n", err)
-			}
-		}
-
+		tmp = append(tmp, '\n')
 		if _, err := file.Write(tmp); err != nil {
 			log.Printf("[-] Failed writing to file -> %s\n", err)
 		}
-
-		first = false
 	}
+}
 
-	if _, err := file.Write([]byte("]}")); err != nil {
-		log.Printf("[-] Failed writing to file -> %s\n", err)
+func DeleteExpiredCertificates(db *sql.DB) {
+	_, err := db.Exec("DELETE FROM Certificate WHERE now() > to_date(NotAfter, 'YYYY-MM-DD HH24:MI:SS');")
+	if err != nil {
+		log.Fatal(err.Error())
 	}
 }
