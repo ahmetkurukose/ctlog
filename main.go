@@ -30,7 +30,7 @@ var inputCount int64 = 0
 var startTime time.Time
 
 const INSERT_BUFFER_SIZE = 10000
-const DOWNLOADER_COUNT = 50
+const DOWNLOADER_COUNT = 30
 const PARSE_BUFFER_SIZE = 1000
 const PARSER_COUNT = 4
 

@@ -64,21 +64,9 @@ func CleanupDownloadTable(db *sql.DB) {
 	db.Exec("DELETE FROM Downloaded")
 }
 
-func isEmailValid(e string) bool {
-	if len(e) < 3 && len(e) > 254 {
-		return false
-	}
-
-	return emailRegex.MatchString(e)
-}
-
-func isDomainValid(d string) bool {
-	return domainRegex.MatchString(d)
-}
-
 // Create a temporary table to save new CT log head indexes, so we can reroll in case of an error
 func CreateTempLogTable(db *sql.DB) {
-	// delete the table if it's still here from the last run
+	// Delete the table if it's still here from the last run
 	_, err := db.Exec("DROP TABLE IF EXISTS TMPCtlog")
 	if err != nil {
 		log.Fatal(err.Error())
