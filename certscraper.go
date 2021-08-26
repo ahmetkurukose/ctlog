@@ -191,7 +191,4 @@ func distributeWork(previousIndex int64, newIndex int64, downloaderCount int64, 
 		go downloadBatch(start, end, logurl, c_parse)
 		Wd.Add(1)
 	}
-
-	//TODO: only update if ran succesfully, using rollback??
-	saveLogIndex(newIndex, logurl, db)
 }

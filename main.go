@@ -55,7 +55,7 @@ func updateHeads(logInfoMap *map[string]sqldb.CTLogInfo, db *sql.DB) {
 // Downloads the new STHs from the logs, returns a map of log url -> old and new index
 func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error) {
 	resultMap := make(map[string]sqldb.CTLogInfo)
-	rows, err := db.Query("SELECT Url, HeadIndex FROM CTLog")
+	rows, err := db.Query("SELECT Url, HeadIndex FROM public.CTLog")
 	if err != nil {
 		log.Fatal("[-] Failed to query logurls from database -> ", err, "\n")
 	}
@@ -103,8 +103,13 @@ func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 
 // Takes out and parses Merkle tree leaf into a certificate info struct
 // Sends the result into the database inserter
-func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
+func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 	defer Wp.Done()
+	sum := 0.0
+	cnt := 0
+
+	// Represents <1000, 1001 - 2000, 2001 - 3000, 3001 - 4000, 4001<
+	cnts := [5]int{0, 0, 0, 0, 0}
 	for e := range c {
 		var leaf ct.MerkleTreeLeaf
 
@@ -159,6 +164,21 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			san += ","
 		}
 
+		size := len(cert.Raw)
+
+		sum += float64(size) / 1000
+		cnt++
+
+		if size < 1000 {
+			cnts[0]++
+		} else if size < 2000 {
+			cnts[1]++
+		} else if size < 3000 {
+			cnts[2]++
+		} else if size < 4000 {
+			cnts[3]++
+		}
+
 		o <- sqldb.CertInfo{
 			CN:           cert.Subject.CommonName,
 			DN:           cert.Subject.String(),
@@ -169,6 +189,9 @@ func parser(id int, c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			Issuer:       cert.Issuer.String(),
 		}
 	}
+
+	log.Println("Average size: ", sum/float64(cnt))
+	log.Printf("Size counts: %d %d %d %d %d\n", cnts[0], cnts[1], cnts[2], cnts[3], cnts[4])
 }
 
 func run(dumpFile bool, db *sql.DB) {
@@ -190,7 +213,7 @@ func run(dumpFile bool, db *sql.DB) {
 	}
 
 	// FOR TESTING PURPOSES
-	//updateHeads(logInfos, db)
+	updateHeads(logInfos, db)
 
 	// Print the amounts to download from each log and then the sum
 	var all int64 = 0
@@ -212,7 +235,7 @@ func run(dumpFile bool, db *sql.DB) {
 
 	// Launch parsers
 	for i := 0; i < PARSER_COUNT; i++ {
-		go parser(i, c_parse, c_insert, db)
+		go parser(c_parse, c_insert, db)
 	}
 	Wp.Add(PARSER_COUNT)
 
@@ -234,6 +257,12 @@ func run(dumpFile bool, db *sql.DB) {
 
 	// Wait for downloaders
 	Wd.Wait()
+
+	// Update log indexes
+	for url, headInfo := range *logInfos {
+		saveLogIndex(headInfo.NewHeadIndex, url, db)
+	}
+
 	downloadEndTime := time.Now()
 	log.Println("FINISHED DOWNLOADING")
 	log.Println("Download duration = ", downloadEndTime.Sub(startTime))
