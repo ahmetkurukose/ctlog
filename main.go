@@ -201,7 +201,7 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 	}
 
 	log.Println("Total size: ", sum)
-	log.Printf("Total size plus what we want to save: ", sum_extra)
+	log.Println("Total size plus what we want to save: ", sum_extra)
 	log.Println("Average size: ", sum/float64(cnt))
 	log.Printf("Size counts: %d %d %d %d %d\n", cnts[0], cnts[1], cnts[2], cnts[3], cnts[4])
 }
