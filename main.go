@@ -106,6 +106,7 @@ func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 	defer Wp.Done()
 	sum := 0.0
+	sum_extra := 0.0
 	cnt := 0
 
 	// Represents <1000, 1001 - 2000, 2001 - 3000, 3001 - 4000, 4001<
@@ -165,8 +166,17 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 		}
 
 		size := len(cert.Raw)
+		size_extra := size +
+			len(cert.Subject.CommonName) +
+			len(cert.Subject.String()) +
+			len(cert.SerialNumber.Text(16)) +
+			len(san) +
+			len(cert.NotBefore.Format("2006-01-02 15:04:05")) +
+			len(cert.NotAfter.Format("2006-01-02 15:04:05")) +
+			len(cert.Issuer.String())
 
 		sum += float64(size) / 1000
+		sum_extra += float64(size_extra) / 1000
 		cnt++
 
 		if size < 1000 {
@@ -191,6 +201,7 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 	}
 
 	log.Println("Total size: ", sum)
+	log.Printf("Total size plus what we want to save: ", sum_extra)
 	log.Println("Average size: ", sum/float64(cnt))
 	log.Printf("Size counts: %d %d %d %d %d\n", cnts[0], cnts[1], cnts[2], cnts[3], cnts[4])
 }
