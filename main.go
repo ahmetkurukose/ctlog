@@ -166,14 +166,13 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 		}
 
 		size := len(cert.Raw)
-		size_extra := size +
-			len(cert.Subject.CommonName) +
-			len(cert.Subject.String()) +
-			len(cert.SerialNumber.Text(16)) +
-			len(san) +
-			len(cert.NotBefore.Format("2006-01-02 15:04:05")) +
-			len(cert.NotAfter.Format("2006-01-02 15:04:05")) +
-			len(cert.Issuer.String())
+		size_extra := size + 4*(len(cert.Subject.CommonName)+
+			len(cert.Subject.String())+
+			len(cert.SerialNumber.Text(16))+
+			len(san)+
+			len(cert.NotBefore.Format("2006-01-02 15:04:05"))+
+			len(cert.NotAfter.Format("2006-01-02 15:04:05"))+
+			len(cert.Issuer.String()))
 
 		sum += float64(size) / 1000
 		sum_extra += float64(size_extra) / 1000
