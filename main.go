@@ -106,11 +106,9 @@ func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
 func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 	defer Wp.Done()
 	sum := 0.0
-	sum_extra := 0.0
+	sumExtra := 0.0
 	cnt := 0
 
-	// Represents <1000, 1001 - 2000, 2001 - 3000, 3001 - 4000, 4001<
-	cnts := [5]int{0, 0, 0, 0, 0}
 	for e := range c {
 		var leaf ct.MerkleTreeLeaf
 
@@ -166,25 +164,14 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 		}
 
 		size := len(cert.Raw)
-		size_extra := size + 4*(len(cert.Subject.CommonName)+
+		sizeExtra := size + 4*(len(cert.Subject.CommonName)+
 			len(cert.SerialNumber.Text(16))+
 			len(san)+
 			len(cert.NotBefore.Format("2006-01-02 15:04:05"))+
 			len(cert.NotAfter.Format("2006-01-02 15:04:05")))
 
 		sum += float64(size) / 1000
-		sum_extra += float64(size_extra) / 1000
-		cnt++
-
-		if size < 1000 {
-			cnts[0]++
-		} else if size < 2000 {
-			cnts[1]++
-		} else if size < 3000 {
-			cnts[2]++
-		} else if size < 4000 {
-			cnts[3]++
-		}
+		sumExtra += float64(sizeExtra) / 1000
 
 		o <- sqldb.CertInfo{
 			CN:           cert.Subject.CommonName,
@@ -197,8 +184,9 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 		}
 	}
 
+	// Sizes are total aka all of the certificates are counted
 	log.Println("Total size: ", sum*PARSER_COUNT)
-	log.Println("Total size plus what we want to save: ", sum_extra*PARSER_COUNT)
+	log.Println("Total size plus what we want to save: ", sumExtra*PARSER_COUNT)
 	log.Println("Average size: ", sum/float64(cnt))
 }
 
