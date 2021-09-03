@@ -167,12 +167,10 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 
 		size := len(cert.Raw)
 		size_extra := size + 4*(len(cert.Subject.CommonName)+
-			len(cert.Subject.String())+
 			len(cert.SerialNumber.Text(16))+
 			len(san)+
 			len(cert.NotBefore.Format("2006-01-02 15:04:05"))+
-			len(cert.NotAfter.Format("2006-01-02 15:04:05"))+
-			len(cert.Issuer.String()))
+			len(cert.NotAfter.Format("2006-01-02 15:04:05")))
 
 		sum += float64(size) / 1000
 		sum_extra += float64(size_extra) / 1000
@@ -199,10 +197,9 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 		}
 	}
 
-	log.Println("Total size: ", sum)
-	log.Println("Total size plus what we want to save: ", sum_extra)
+	log.Println("Total size: ", sum*PARSER_COUNT)
+	log.Println("Total size plus what we want to save: ", sum_extra*PARSER_COUNT)
 	log.Println("Average size: ", sum/float64(cnt))
-	log.Printf("Size counts: %d %d %d %d %d\n", cnts[0], cnts[1], cnts[2], cnts[3], cnts[4])
 }
 
 func run(dumpFile bool, db *sql.DB) {
