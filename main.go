@@ -166,10 +166,12 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 		size := len(cert.Raw)
 		sizeExtra := size + 4*(len(cert.Subject.CommonName)+
 			len(san)+
-			len(cert.NotAfter.Format("2006-01-02 15:04:05")))
+			// Not sure about the time
+			len(cert.NotAfter.Format("2006-01-02")))
 
 		sum += float64(size) / 1000
 		sumExtra += float64(sizeExtra) / 1000
+		cnt++
 
 		o <- sqldb.CertInfo{
 			CN:           cert.Subject.CommonName,
@@ -298,6 +300,7 @@ func run(dumpFile bool, db *sql.DB) {
 func main() {
 	log.Println("STARTING")
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	log.Println("Number of logical CPUs: ", runtime.NumCPU())
 	os.Setenv("LC_ALL", "C")
 
 	flag.Usage = func() { usage() }
