@@ -135,7 +135,7 @@ func CreateClient() {
 func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry) {
 	defer Wd.Done()
 	cur := start
-	const RETRY_WAIT = 1
+	const RETRY_WAIT = 2
 
 	// We increase the index by the number of entries we got from the request
 	// That means the download speed will most likely not be linear
@@ -150,11 +150,12 @@ func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry
 			// Common errors, we don't have to log them
 			// < = <null>
 			// T = Too many connections, throttling
-			if err.Error() != "invalid character '<' looking for beginning of value" &&
-				err.Error() != "invalid character 'T' looking for beginning of value" {
-				log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
-			}
+			//if err.Error() != "invalid character '<' looking for beginning of value" &&
+			//	err.Error() != "invalid character 'T' looking for beginning of value" {
+			//	log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
+			//}
 
+			log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
 			entries, err = DownloadEntries(url)
 			attempts++
 			if attempts >= 10 {

@@ -55,7 +55,7 @@ func updateHeads(logInfoMap *map[string]sqldb.CTLogInfo, db *sql.DB) {
 // Downloads the new STHs from the logs, returns a map of log url -> old and new index
 func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error) {
 	resultMap := make(map[string]sqldb.CTLogInfo)
-	rows, err := db.Query("SELECT Url, HeadIndex FROM public.CTLog")
+	rows, err := db.Query("SELECT Url, HeadIndex FROM CTLog")
 	if err != nil {
 		log.Fatal("[-] Failed to query logurls from database -> ", err, "\n")
 	}
@@ -164,10 +164,10 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 		}
 
 		size := len(cert.Raw)
-		sizeExtra := size + 4*(len(cert.Subject.CommonName)+
-			len(san)+
-			// Not sure about the time
-			len(cert.NotAfter.Format("2006-01-02")))
+		sizeExtra := size + len(cert.Subject.CommonName) +
+			len(san) +
+			//Not sure about the time
+			len(cert.NotAfter.Format("2006-01-02"))
 
 		sum += float64(size) / 1000
 		sumExtra += float64(sizeExtra) / 1000
@@ -185,7 +185,7 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 	}
 
 	// Sizes are total aka all of the certificates are counted
-	log.Println("Total size: ", sum*PARSER_COUNT)
+	log.Println("Total size (all parsers): ", sum*PARSER_COUNT)
 	log.Println("Total size plus what we want to save: ", sumExtra*PARSER_COUNT)
 	log.Println("Average size: ", sum/float64(cnt))
 }
@@ -209,7 +209,7 @@ func run(dumpFile bool, db *sql.DB) {
 	}
 
 	// FOR TESTING PURPOSES
-	updateHeads(logInfos, db)
+	//updateHeads(logInfos, db)
 
 	// Print the amounts to download from each log and then the sum
 	var all int64 = 0
