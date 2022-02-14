@@ -24,6 +24,7 @@ type CertInfo struct {
 	NotBefore    string
 	NotAfter     string
 	Issuer       string
+	Raw          string
 }
 
 type APIData struct {
@@ -87,6 +88,15 @@ func UpdateLogIndexes(db *sql.DB) {
 	_, err = db.Exec("ALTER TABLE TmpCTLog RENAME TO CTLog")
 	if err != nil {
 		log.Fatal(err.Error())
+	}
+}
+
+// Updates head index.
+func SaveLogIndex(index int64, logurl string, db *sql.DB) {
+	_, err := db.Exec("UPDATE TmpCTLog SET HeadIndex = $1 WHERE Url = $2", index, logurl)
+	if err != nil {
+		log.Printf("[-] Failed to update head index of log %s -> %s\n", logurl, err)
+		return
 	}
 }
 

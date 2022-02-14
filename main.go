@@ -4,6 +4,7 @@ import (
 	ct "ctlog/ct"
 	sqldb "ctlog/db"
 	"database/sql"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	ct_tls "github.com/google/certificate-transparency-go/tls"
@@ -30,7 +31,7 @@ var inputCount int64 = 0
 var startTime time.Time
 
 const INSERT_BUFFER_SIZE = 10000
-const DOWNLOADER_COUNT = 30
+const DOWNLOADER_COUNT = 120
 const PARSE_BUFFER_SIZE = 1000
 const PARSER_COUNT = 4
 
@@ -80,11 +81,11 @@ func downloadHeads(db *sql.DB) (*map[string]sqldb.CTLogInfo, error) {
 // Removes items from the inserter channel and inserts them into the database
 // Duplicates from multiple logs get ignored
 func inserter(o <-chan sqldb.CertInfo, db *sql.DB) {
-	q, _ := db.Prepare("INSERT INTO Downloaded VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING ")
+	q, _ := db.Prepare("INSERT INTO Downloaded VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING ")
 	defer q.Close()
 	count := 0
 	for name := range o {
-		_, err := q.Exec(name.CN, name.DN, name.SerialNumber, name.SAN, name.NotBefore, name.NotAfter, name.Issuer)
+		_, err := q.Exec(name.CN, name.DN, name.SerialNumber, name.SAN, name.NotBefore, name.NotAfter, name.Issuer, name.Raw)
 		if err != nil {
 			log.Printf("Failed saving cert with CN: %s\nDN: %s\nDNS: %s\nSerialNumber: %s\n-> %s", name.CN, name.DN, name.SAN, name.SerialNumber, err)
 		}
@@ -163,6 +164,7 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			san += ","
 		}
 
+		// Statistics
 		size := len(cert.Raw)
 		sizeExtra := size + len(cert.Subject.CommonName) +
 			len(san) +
@@ -181,6 +183,7 @@ func parser(c <-chan CTEntry, o chan<- sqldb.CertInfo, db *sql.DB) {
 			NotBefore:    cert.NotBefore.Format("2006-01-02 15:04:05"),
 			NotAfter:     cert.NotAfter.Format("2006-01-02 15:04:05"),
 			Issuer:       cert.Issuer.String(),
+			Raw:          hex.EncodeToString(cert.Raw),
 		}
 	}
 
@@ -256,7 +259,7 @@ func run(dumpFile bool, db *sql.DB) {
 
 	// Update log indexes
 	for url, headInfo := range *logInfos {
-		saveLogIndex(headInfo.NewHeadIndex, url, db)
+		sqldb.SaveLogIndex(headInfo.NewHeadIndex, url, db)
 	}
 
 	downloadEndTime := time.Now()

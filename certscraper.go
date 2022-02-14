@@ -112,15 +112,6 @@ func DownloadSTH(logurl string) (CTHead, error) {
 	return sth, err
 }
 
-// Updates head index.
-func saveLogIndex(index int64, logurl string, db *sql.DB) {
-	_, err := db.Exec("UPDATE TmpCTLog SET HeadIndex = $1 WHERE Url = $2", index, logurl)
-	if err != nil {
-		log.Printf("[-] Failed to update head index of log %s -> %s\n", logurl, err)
-		return
-	}
-}
-
 // Creates HTTP client
 func CreateClient() {
 	tr := &http.Transport{
