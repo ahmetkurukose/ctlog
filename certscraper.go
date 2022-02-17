@@ -146,10 +146,13 @@ func downloadBatch(start int64, end int64, logurl string, c_parse chan<- CTEntry
 			//	log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
 			//}
 
-			log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
+			if attempts%5 == 0 {
+				log.Printf("[-] (%d) Failed to download entries for %s -> %s\n", attempts, url, err)
+			}
+
 			entries, err = DownloadEntries(url)
 			attempts++
-			if attempts >= 10 {
+			if attempts >= 20 {
 				log.Printf("[-] Failed to download entries for %s -> %s\n", url, err)
 				return
 			}
@@ -182,5 +185,6 @@ func distributeWork(previousIndex int64, newIndex int64, downloaderCount int64, 
 
 		go downloadBatch(start, end, logurl, c_parse)
 		Wd.Add(1)
+		time.Sleep(time.Duration(500) * time.Millisecond)
 	}
 }
